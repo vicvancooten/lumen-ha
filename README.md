@@ -118,6 +118,34 @@ You also need Python 3.10+ on any machine that can reach Home Assistant.
 - **Get the normal HA interface back:** use **More → Show sidebar**, or add `?disable_km` to any dashboard URL.
   To keep HA's own header and sidebar permanently, set `dashboard.kiosk: false`.
 
+### Haunted rooms (optional)
+
+Add a `haunted:` section to `house.yaml` (see the commented example) and every so often, for about a
+second, long black hair creeps out of a corner of a room photo, Grudge-style. Blink and it's gone.
+
+<p align="center">
+  <img src="docs/haunted/demo.webp" alt="A toilet photo that briefly shows hair hanging from the corner" width="60%">
+</p>
+
+<details>
+<summary>More haunted rooms</summary>
+
+| Room photo | Haunted |
+| --- | --- |
+| ![Living room](docs/haunted/living-room.webp) | ![Living room, haunted](docs/haunted/living-room-haunted.webp) |
+| ![Bathroom](docs/haunted/bathroom.webp) | ![Bathroom, haunted](docs/haunted/bathroom-haunted.webp) |
+| ![Attic](docs/haunted/attic.webp) | ![Attic, haunted](docs/haunted/attic-haunted.webp) |
+| ![Hallway](docs/haunted/hallway.webp) | ![Hallway, haunted](docs/haunted/hallway-haunted.webp) |
+
+</details>
+
+The generator sends each room's area picture to an image model (OpenAI `gpt-image-2` by default, so you
+need an API key) with a prompt to add the hair, and uploads the result to Home Assistant's image store.
+Rooms without a picture get an imagined one. Images are cached in `haunted-cache.json` and only
+regenerated when the room photo, prompt or model changes; `--rehaunt` forces new ones. `--dry-run` never
+generates images, it only uses what's already cached. Each room shows up on its own random timer,
+averaging once every `every` seconds.
+
 ## Troubleshooting
 
 - **Cards show "Custom element doesn't exist":** one of the required HACS cards is missing. Install it, then hard-refresh the browser.

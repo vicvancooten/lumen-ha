@@ -49,6 +49,15 @@ energy:                      # optional
     - {entity: sensor.gas_consumption, name: Gas, icon: mdi:fire, color: deep-orange}
     - {entity: sensor.grid_fossil_percentage, name: Fossil grid, icon: mdi:factory, color: blue-grey}
 
+# haunted:                   # optional: now and then, hair creeps out of a corner of a room photo
+#   every: 100               # average seconds between appearances, per room (randomised 50-150%)
+#   duration: 1              # seconds it stays visible
+#   api_key_file: ~/.config/lumen/openai-key   # or set OPENAI_API_KEY
+#   model: gpt-image-2       # any OpenAI-compatible image model; api_url: to use another endpoint
+#   quality: high            # low / medium / high: cheaper vs. more convincing
+#   rooms: [bedroom, bathroom]                 # default: every room
+#   prompt: "..."            # replaces the built-in prompt; {name} is the room name
+
 floors:                      # `id` is the HA floor ID
   - {id: ground_floor, path: ground-floor, name: Ground floor, short: Ground, icon: mdi:home-floor-g, tagline: "Living, cooking & outdoors"}
   - {id: first_floor, path: first-floor, name: First floor, short: First, icon: mdi:home-floor-1, tagline: "Sleeping & working"}

@@ -5,13 +5,20 @@ Builds a floor -> room Lovelace dashboard from a small YAML description of your 
 
     python3 build_dashboard.py house.yaml            # generate and push
     python3 build_dashboard.py house.yaml --dry-run  # only write <url_path>.json locally
+    python3 build_dashboard.py house.yaml --rehaunt  # regenerate the haunted room photos
 
 The access token is read from $HA_TOKEN, or from the file named in
 home_assistant.token_file.
 """
+import base64
+import hashlib
 import json
 import os
+import re
 import sys
+import urllib.error
+import urllib.request
+import uuid
 
 # Optional: dependencies vendored with `pip install --target pylib -r requirements.txt`.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "pylib"))
@@ -19,6 +26,7 @@ import websocket  # noqa: E402
 import yaml  # noqa: E402
 
 CFG = {}
+HA = {}
 FLOORS = []
 ROOMS = {}
 STATES = {}
@@ -206,6 +214,7 @@ def room_card(area_id, room, cols=12, rows=None, navigate=True, banner=False, as
         aspect = "7/2"
     if aspect:
         c["styles"]["card"].update({"--user-grid-aspect-ratio": aspect, "aspect-ratio": aspect})
+    style = []
     if banner:
         c["features"].remove("full_card_actions")
         fade = "linear-gradient(to bottom, #000 45%, rgba(0,0,0,.55) 75%, transparent 100%)"
@@ -215,7 +224,11 @@ def room_card(area_id, room, cols=12, rows=None, navigate=True, banner=False, as
         })
         c["styles"]["title"] = {"display": "none"}  # the header already shows the room name
         # taller photo on phones, where 7:2 is just a strip
-        c["card_mod"] = {"style": "@media (max-width: 767px) { ha-card { --user-grid-aspect-ratio: 4/3 !important; aspect-ratio: 4/3 !important; } }"}
+        style.append("@media (max-width: 767px) { ha-card { --user-grid-aspect-ratio: 4/3 !important; aspect-ratio: 4/3 !important; } }")
+    if room.get("haunt"):
+        style.append(HAUNT_STYLE % (json.dumps(room["haunt"]), area_id))
+    if style:
+        c["card_mod"] = {"style": "\n".join(style)}
     c.update(grid(cols, rows))
     return c
 
@@ -360,7 +373,10 @@ def navbar():
     for i, f in enumerate(FLOORS, start=1):
         tabs[f"/{URL_PATH}/{f['path']}"] = i
         tabs.update({f"/{URL_PATH}/{r['path']}": i for r in ROOMS.values() if r["floor"] == f["id"]})
-    home_selected = ("[[[ " + NAV_MOTION_JS % json.dumps(tabs) +
+    haunted = [a for a, r in ROOMS.items() if r.get("haunt")]
+    haunt_js = HAUNT_JS % (json.dumps(haunted), float(CFG["haunted"].get("every", 100)),
+                           float(CFG["haunted"].get("duration", 1))) if haunted else ""
+    home_selected = ("[[[ " + NAV_MOTION_JS % json.dumps(tabs) + haunt_js +
                      f"return window.location.pathname === {json.dumps(f'/{URL_PATH}/home')}; ]]]")
     routes = [{"url": f"/{URL_PATH}/home", "icon": "mdi:home-outline", "icon_selected": "mdi:home",
                "label": "Home", "selected": home_selected}]
@@ -442,6 +458,150 @@ def apply_style(node):
         for k, v in node.items():
             if k != "card_mod":
                 apply_style(v)
+
+
+# --------------------------------------------------------------------------------------
+# Haunted rooms: now and then, hair creeps out of a corner of a room photo
+# --------------------------------------------------------------------------------------
+HAUNT_PROMPT = (
+    "Edit this photo of a room. Long, wet, jet-black human hair pours out of one of the upper corners, "
+    "where the walls meet the ceiling, and hangs down in thick tangled strands, like the ghost in the "
+    "film The Grudge. Keep everything else exactly as it is: same camera angle, framing, furniture and "
+    "lighting. Photorealistic. Don't add people or text.")
+HAUNT_PROMPT_NO_PHOTO = (
+    "Photo of a dim, empty {name}, looking up into the corner where the walls meet the ceiling. Long, "
+    "wet, jet-black human hair pours out of the corner and hangs down in thick tangled strands, like "
+    "the ghost in the film The Grudge. Photorealistic, wide angle. Don't add people or text.")
+HAUNT_CACHE = "haunted-cache.json"
+
+# Sits between the room photo and the card content. Hidden until HAUNT_JS sets
+# --lumen-haunt-<area>; 70% opacity matches the photo layer (background.opacity).
+HAUNT_STYLE = """
+room-background-image::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background: center / cover no-repeat url(%s);
+  opacity: calc(var(--lumen-haunt-%s, 0) * .7);
+  transition: opacity .12s;
+}
+"""
+
+# Custom properties inherit through shadow roots, so one flag on <html> reaches every card
+# of that room. Each room waits a random 50-150% of `every` seconds between appearances.
+HAUNT_JS = """
+if (!window.__lumenHaunt) {
+  window.__lumenHaunt = true;
+  const rooms = %s, every = %s, show = %s, root = document.documentElement.style;
+  const haunt = (room) => setTimeout(() => {
+    root.setProperty('--lumen-haunt-' + room, '1');
+    setTimeout(() => { root.removeProperty('--lumen-haunt-' + room); haunt(room); }, show * 1000);
+  }, every * (0.5 + Math.random()) * 1000);
+  rooms.forEach(haunt);
+}
+"""
+
+
+def http(url, data=None, headers=None):
+    if not url.startswith("http"):
+        url = HA["url"] + url
+    with urllib.request.urlopen(urllib.request.Request(url, data, headers or {}), timeout=300) as r:
+        return r.read(), r.headers.get_content_type()
+
+
+def multipart(fields, files):
+    """Encode form fields and {name: (filename, content_type, bytes)} files."""
+    boundary = uuid.uuid4().hex
+    body = b"".join(f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
+                    for k, v in fields.items())
+    for k, (filename, ctype, blob) in files.items():
+        body += (f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"; filename="{filename}"\r\n'
+                 f"Content-Type: {ctype}\r\n\r\n").encode() + blob + b"\r\n"
+    return body + f"--{boundary}--\r\n".encode(), f"multipart/form-data; boundary={boundary}"
+
+
+def haunted_photo(room, picture, hc):
+    """Ask the image API for a haunted take on the room photo, or on an imagined room without one."""
+    key = os.environ.get("OPENAI_API_KEY")
+    if not key:
+        if not hc.get("api_key_file"):
+            sys.exit("haunted: set OPENAI_API_KEY or haunted.api_key_file")
+        with open(os.path.expanduser(hc["api_key_file"])) as fh:
+            key = fh.read().strip()
+    api = hc.get("api_url", "https://api.openai.com/v1").rstrip("/")
+    # gpt-image-2 keeps the photo's framing and aspect ratio, so the overlay lines up exactly.
+    model = hc.get("model", "gpt-image-2")
+    quality = hc.get("quality", "high")
+    if picture:
+        # HA area pictures are served as thumbnails; the model gets more detail from the original.
+        picture = re.sub(r"^(/api/image/serve/[^/]+)/\d+x\d+$", r"\1/original", picture)
+        # Only send the HA token to HA itself, not to an external picture URL.
+        auth = {} if picture.startswith("http") else {"Authorization": f"Bearer {HA['token']}"}
+        photo, ctype = http(picture, headers=auth)
+        prompt = hc.get("prompt", HAUNT_PROMPT).replace("{name}", room["name"])
+        body, form = multipart({"model": model, "prompt": prompt, "quality": quality},
+                               {"image": ("room." + ctype.split("/")[-1], ctype, photo)})
+        reply, _ = http(f"{api}/images/edits", body, {"Authorization": f"Bearer {key}", "Content-Type": form})
+    else:
+        prompt = hc.get("prompt", HAUNT_PROMPT_NO_PHOTO).replace("{name}", room["name"].lower())
+        body = json.dumps({"model": model, "prompt": prompt, "quality": quality, "size": "1536x1024"}).encode()
+        reply, _ = http(f"{api}/images/generations", body,
+                        {"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+    return base64.b64decode(json.loads(reply)["data"][0]["b64_json"])
+
+
+def haunt(call, areas, dry_run):
+    """Give each haunted room a generated photo, uploaded to HA's image store. Results are cached
+    in haunted-cache.json and only regenerated when the room photo or prompt changes (or --rehaunt)."""
+    hc = CFG.get("haunted")
+    if not hc:
+        return
+    pictures = {a["area_id"]: a.get("picture") for a in areas}
+    cache = {}
+    if os.path.exists(HAUNT_CACHE):
+        with open(HAUNT_CACHE) as fh:
+            cache = json.load(fh)
+    try:
+        stored = {i["id"] for i in call("image/list")}
+    except RuntimeError:
+        stored = None
+    for area_id in hc.get("rooms") or list(ROOMS):
+        room = ROOMS.get(area_id)
+        if not room:
+            print(f"WARNING: haunted room {area_id!r} is not in rooms")
+            continue
+        picture = pictures.get(area_id)
+        fingerprint = hashlib.sha256(json.dumps(
+            [picture, hc.get("prompt"), hc.get("model"), hc.get("quality"), room["name"]]).encode()).hexdigest()[:16]
+        hit = cache.get(area_id)
+        if (hit and hit["fingerprint"] == fingerprint and "--rehaunt" not in sys.argv
+                and (stored is None or hit["id"] in stored)):
+            room["haunt"] = hit["url"]
+            continue
+        if dry_run:
+            print(f"haunted: no image for {room['name']} yet; run without --dry-run to generate it")
+            continue
+        print(f"haunted: generating {room['name']}...")
+        try:
+            blob = haunted_photo(room, picture, hc)
+            body, form = multipart({}, {"file": (f"haunted-{area_id}.png", "image/png", blob)})
+            reply, _ = http("/api/image/upload", body,
+                            {"Authorization": f"Bearer {HA['token']}", "Content-Type": form})
+        except urllib.error.HTTPError as e:
+            print(f"WARNING: haunting {room['name']} failed: {e} {e.read().decode(errors='replace')[:300]}")
+            continue
+        except (OSError, KeyError, ValueError) as e:
+            print(f"WARNING: haunting {room['name']} failed: {e}")
+            continue
+        if hit and stored and hit["id"] in stored:
+            try:
+                call("image/delete", image_id=hit["id"])
+            except RuntimeError:
+                pass
+        image_id = json.loads(reply)["id"]
+        cache[area_id] = {"fingerprint": fingerprint, "id": image_id,
+                          "url": f"/api/image/serve/{image_id}/original"}
+        room["haunt"] = cache[area_id]["url"]
+        with open(HAUNT_CACHE, "w") as fh:
+            json.dump(cache, fh, indent=1)
 
 
 # --------------------------------------------------------------------------------------
@@ -701,6 +861,7 @@ def connect():
     if not token:
         with open(os.path.expanduser(ha["token_file"])) as fh:
             token = fh.read().strip()
+    HA.update(url=url.rstrip("/"), token=token)
     ws = websocket.create_connection(url.replace("http", "ws", 1).rstrip("/") + "/api/websocket", timeout=30)
     ws.recv()
     ws.send(json.dumps({"type": "auth", "access_token": token}))
@@ -737,6 +898,7 @@ def main():
                                 if (ROOMS.get(a["area_id"], {}).get("floor") or a.get("floor_id")) == f["id"]]
                       for f in FLOORS}
     floor_by_id = {f["id"]: f for f in FLOORS}
+    haunt(call, areas, "--dry-run" in sys.argv)
 
     views = [home_view(areas_by_floor)]
     views += [floor_view(f, areas_by_floor) for f in FLOORS]
