@@ -162,8 +162,9 @@ Lumen:
       navbar-primary-color: "#6c5ce7"
 
   # ---------- card-mod: frosted glass and micro-interactions on every card ----------
-  # Cards rise in when a view opens (staggered when the card sets --lumen-i, as the Lumen
-  # dashboard generator does), lift a little on hover, and their icon nudges up.
+  # Cards rise in when a view opens (staggered when a card sets --lumen-i), lift a little on
+  # hover, and their icon nudges up. The Lumen dashboard runs its own page-wide entrance and
+  # turns this one off with --lumen-rise: none.
   # Everything uses `translate`/`scale` (not `transform`) so it never fights card styles,
   # and all of it switches off for prefers-reduced-motion.
   card-mod-theme: Lumen
@@ -173,7 +174,7 @@ Lumen:
       -webkit-backdrop-filter: blur(18px) saturate(140%);
       transition: box-shadow .35s var(--lumen-ease), border-color .35s var(--lumen-ease),
                   translate .35s var(--lumen-ease), background-color .35s var(--lumen-ease);
-      animation: lumen-rise .5s var(--lumen-ease) calc(var(--lumen-i, 0) * 45ms) backwards;
+      animation: var(--lumen-rise, lumen-rise) .5s var(--lumen-ease) calc(var(--lumen-i, 0) * 45ms) backwards;
     }
     /* Headings and titles are bare text: no glass, or it shows as a band over photo backgrounds. */
     :host(:is(.type-heading, .type-custom-mushroom-title-card, .type-custom-mushroom-chips-card)) ha-card {

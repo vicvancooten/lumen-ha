@@ -293,17 +293,12 @@ ha-card:active { scale: .985; }
 # Room page hero: the photo is the page background, so the card itself is just the room name
 # and toggles floating over it. No glass, no photo layer, no lift.
 HERO_STYLE = """
-ha-card {
-  backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
-  animation: lumen-hero .7s EASE backwards;
-}
+ha-card { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 ha-card:hover { translate: none !important; }
 room-background-image { display: none; }
 .sensors, .stats { color: rgba(255, 255, 255, .88) !important; text-shadow: 0 1px 10px rgba(0, 0, 0, .5); }
-@keyframes lumen-hero { from { opacity: 0; translate: 0 14px; } }
 @media (max-width: 767px) { ha-card { --user-grid-aspect-ratio: 5/4 !important; aspect-ratio: 5/4 !important; } }
-@media (prefers-reduced-motion: reduce) { ha-card { animation: none; } }
-""".replace("EASE", EASE)
+"""
 GLASS_TYPES = {"tile", "weather-forecast", "custom:mini-graph-card", "markdown", "custom:mushroom-template-card"}
 TITLE_STYLE = """
 ha-card { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
@@ -440,6 +435,77 @@ if (!window.__lumenNav) {
 """
 
 
+# Page-wide entrance, run from the navbar (it's on every view). When a view is shown, it's held
+# invisible until its layout settles, then every card on screen rises in at once, delayed by where
+# it sits (top to bottom, a touch left to right), so the whole page moves as one. Doing this in
+# CSS per card doesn't line up: HA paints cards before card-mod styles them, and card-mod styles
+# each card at a slightly different moment. The bars only fade: moving them would break their
+# fixed positioning. Also marks room pages so wide screens fit their photo to the hero band.
+ENTER_JS = """
+if (!window.__lumenEnter?.isConnected) {
+  const walk = (node, out) => {
+    for (const el of node.children) {
+      if (el.localName === 'hui-card') { out.push(el); continue; }
+      if (el.shadowRoot) walk(el.shadowRoot, out);
+      walk(el, out);
+    }
+    return out;
+  };
+  const find = (node, name) => {
+    for (const el of node.children) {
+      if (el.localName === name) return el;
+      const hit = (el.shadowRoot && find(el.shadowRoot, name)) || find(el, name);
+      if (hit) return hit;
+    }
+  };
+  const container = find(document, 'hui-view-container');
+  if (container) {
+    window.__lumenEnter = container;
+    document.documentElement.style.setProperty('--lumen-rise', 'none');
+    const heroes = %s;
+    const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+    const style = document.createElement('style');
+    style.textContent = '@media (min-width: 768px) { hui-view-background[lumen-hero] { height: 60vh; bottom: auto; } }';
+    container.getRootNode().appendChild(style);
+    let run = 0;
+    const enter = (view) => {
+      const id = ++run;
+      if (!view || reduce.matches || container.classList.contains('has-tab-bar')) return;
+      view.style.opacity = '0';
+      let last = '', same = 0;
+      const t0 = performance.now();
+      const tick = () => {
+        if (id !== run) return;
+        const cards = walk(view, []).filter(c => c.getBoundingClientRect().width);
+        const sig = cards.map(c => { const r = c.getBoundingClientRect(); return [r.x | 0, r.y | 0, r.width | 0, r.height | 0]; }).join(';');
+        same = sig && sig === last ? same + 1 : 0;
+        last = sig;
+        if (same < 3 && performance.now() - t0 < 1000) return requestAnimationFrame(tick);
+        view.style.opacity = '';
+        for (const c of cards) {
+          const r = c.getBoundingClientRect();
+          if (r.top > innerHeight || r.bottom < 0) continue;
+          const bar = c.querySelector('navbar-card');
+          c.animate(bar ? [{ opacity: 0 }, { opacity: 1 }]
+                        : [{ opacity: 0, translate: '0 12px' }, { opacity: 1, translate: '0 0' }],
+                    { duration: 520, easing: 'cubic-bezier(.2, .8, .2, 1)', fill: 'backwards',
+                      delay: bar ? 0 : Math.min(650, Math.max(0, r.top) * .5 + r.left * .06) });
+        }
+      };
+      requestAnimationFrame(tick);
+    };
+    const mark = () => container.querySelector('hui-view-background')
+      ?.toggleAttribute('lumen-hero', heroes.includes(location.pathname));
+    new MutationObserver(changes => {
+      for (const m of changes) for (const n of m.addedNodes) if (n.localName === 'hui-view') { mark(); enter(n); }
+    }).observe(container, { childList: true });
+    mark();
+    enter(container.querySelector('hui-view'));
+  }
+}
+"""
+
+
 def navbar():
     def selected(paths):
         return "[[[ return " + json.dumps(paths) + ".includes(window.location.pathname) ]]]"
@@ -452,7 +518,8 @@ def navbar():
     haunted = [a for a, r in ROOMS.items() if r.get("haunt")]
     haunt_js = HAUNT_JS % (json.dumps(haunted), float(CFG["haunted"].get("every", 100)),
                            float(CFG["haunted"].get("duration", 1))) if haunted else ""
-    home_selected = ("[[[ " + NAV_MOTION_JS % json.dumps(tabs) + haunt_js +
+    heroes = [f"/{URL_PATH}/{r['path']}" for r in ROOMS.values() if r.get("picture")]
+    home_selected = ("[[[ " + NAV_MOTION_JS % json.dumps(tabs) + ENTER_JS % json.dumps(heroes) + haunt_js +
                      f"return window.location.pathname === {json.dumps(f'/{URL_PATH}/home')}; ]]]")
     routes = [{"url": f"/{URL_PATH}/home", "icon": "mdi:home-outline", "icon_selected": "mdi:home",
                "label": "Home", "selected": home_selected}]
@@ -516,17 +583,6 @@ def header(title, back=None):
         "styles": styles,
         **grid(36),
     }
-
-
-def stagger(views):
-    """Number the cards so the theme's rise-in animation cascades through each view: down each
-    section, and a beat later for each section after it."""
-    for v in views:
-        for si, sec in enumerate(v["sections"][1:]):  # section 0 is the header and navbar
-            for ci, card in enumerate(sec["cards"]):
-                i = min(si * 2 + ci, 16)
-                cm = card.setdefault("card_mod", {})
-                cm["style"] = f":host {{ --lumen-i: {i}; }}\n" + cm.get("style", "")
 
 
 def apply_style(node):
@@ -824,6 +880,10 @@ def hero_background(picture):
     def step(phone, wide):
         return f"clamp({wide}, {phone} + (767px - 100vw) * 100, {phone})"
 
+    # On wide screens ENTER_JS shrinks the background to the 60vh hero band, so the photo is
+    # centred in what's visible; phones keep it anchored a little above centre.
+    y = "clamp(30%, 30% + (100vw - 767px) * 100, 50%)"
+
     return ", ".join([
         # top scrim, so the floating header and the room name stay legible on bright photos
         "linear-gradient(to bottom, rgba(0,0,0,.38), rgba(0,0,0,0) 26vh)",
@@ -837,8 +897,8 @@ def hero_background(picture):
         f"clamp(0px, (100vw - 767px) * 100, 100vh) no-repeat",
         # a little theme colour washed over the photo, so it belongs to the page
         "radial-gradient(120% 70% at 0% 0%, color-mix(in srgb, var(--primary-color) 22%, transparent), transparent 70%)",
-        f"center 30% / cover no-repeat url({json.dumps(picture)})",
-        f"center 30% / cover no-repeat url({json.dumps(thumb)}) {bg}",
+        f"center {y} / cover no-repeat url({json.dumps(picture)})",
+        f"center {y} / cover no-repeat url({json.dumps(thumb)}) {bg}",
     ]) + " fixed"
 
 
@@ -1055,7 +1115,6 @@ def main():
         # Hide HA's header and sidebar; the floating navbar replaces them. ?disable_km restores them.
         config["kiosk_mode"] = {"kiosk": True}
     apply_style(config)
-    stagger(views)
 
     out = f"{URL_PATH}.json"
     with open(out, "w") as fh:
