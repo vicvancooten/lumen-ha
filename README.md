@@ -31,7 +31,7 @@ mini header with search and Assist.
 
 | Part | What it does |
 | --- | --- |
-| `themes/lumen.yaml` | The **Lumen** theme. Light and dark modes, Inter typography, rounded frosted cards, violet accent, warm amber for lights that are on. Status bar colours match the page for an edge-to-edge app look. |
+| `themes/lumen.yaml` | The **Lumen** theme. Light and dark modes, Inter typography, soft 28px frosted cards with pill-shaped chips, buttons, sliders and icons, violet accent, warm amber for lights that are on. With card-mod, cards rise in when a page opens and lift on hover. Status bar colours match the page for an edge-to-edge app look. |
 | `dashboard/build_dashboard.py` | Generates the dashboard: a home page (greeting, weather, quick settings, energy, every room as a photo card), one page per floor, and one page per room with lighting, media, vacuum, fridge, climate, power and details sections. |
 | `dashboard/house.example.yaml` | Describes your home: floors, rooms and which entities go where. |
 
@@ -113,6 +113,7 @@ You also need Python 3.10+ on any machine that can reach Home Assistant.
 - **Bottom bar:** Home, one tab per floor, and **More** (Edit dashboard, Energy, History, Map,
   Settings, Profile & theme, Show sidebar). A floor's tab stays highlighted inside its rooms.
 - **Top bar:** page name, back (on room pages), search, Assist and notifications.
+- **Room pages:** the room's photo is the page background, fading into the page colour as you scroll, with the room name large on top.
 - **Room cards:** tap to open the room, and tap a device icon to toggle it. The card lights up when a light
   is on and gets a green border while there's motion.
 - **Get the normal HA interface back:** use **More → Show sidebar**, or add `?disable_km` to any dashboard URL.
