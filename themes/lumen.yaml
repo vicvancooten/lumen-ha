@@ -174,6 +174,10 @@ Lumen:
                   translate .35s var(--lumen-ease), background-color .35s var(--lumen-ease);
       animation: lumen-rise .5s var(--lumen-ease) backwards;
     }
+    /* Headings and titles are bare text: no glass, or it shows as a band over photo backgrounds. */
+    :host(:is(.type-heading, .type-custom-mushroom-title-card, .type-custom-mushroom-chips-card)) ha-card {
+      backdrop-filter: none; -webkit-backdrop-filter: none;
+    }
     ha-card:focus-visible {
       outline: 2px solid color-mix(in srgb, var(--primary-color) 70%, transparent);
       outline-offset: 3px;

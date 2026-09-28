@@ -306,11 +306,15 @@ room-background-image { display: none; }
 """.replace("EASE", EASE)
 GLASS_TYPES = {"tile", "weather-forecast", "custom:mini-graph-card", "markdown", "custom:mushroom-template-card"}
 TITLE_STYLE = """
+ha-card { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 .title { font-size: 30px !important; font-weight: 700 !important; letter-spacing: -.02em; }
 .subtitle { font-size: 15px !important; opacity: .7; }
 """
 HEADING_STYLE = """
-ha-card { --ha-heading-card-title-font-size: 17px; --ha-heading-card-title-font-weight: 650; }
+ha-card {
+  --ha-heading-card-title-font-size: 17px; --ha-heading-card-title-font-weight: 650;
+  backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+}
 """
 INTER_FONT = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
 
