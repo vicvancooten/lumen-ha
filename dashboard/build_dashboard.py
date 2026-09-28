@@ -337,8 +337,8 @@ NAVBAR_STYLES = """
 }
 .button .icon, .button .image { transition: translate .3s cubic-bezier(.22, 1.3, .36, 1); }
 @media (hover: hover) {
-  .button:not(.active):hover { background: color-mix(in srgb, var(--primary-text-color) 7%, transparent); }
-  .button:not(.active):hover .icon, .button:not(.active):hover .image { translate: 0 -2px; }
+  .navbar-card .button:not(.active):hover { background: color-mix(in srgb, var(--primary-text-color) 7%, transparent); }
+  .navbar-card .button:not(.active):hover .icon, .navbar-card .button:not(.active):hover .image { translate: 0 -2px; }
   .popup-item:hover .button { transform: scale(1.06); }
 }
 .button:active { transform: scale(.92); }
@@ -374,10 +374,17 @@ NAVBAR_STYLES = """
 }
 """
 
+# kiosk-mode sets --kiosk-header-height: 0px while it hides HA's toolbar. Without it (sidebar
+# shown, ?disable_km, kiosk: false) HA's toolbar is back, so this header steps aside: hidden
+# where style queries work, parked below HA's toolbar elsewhere.
 HEADER_STYLES = """
 :host { display: block; height: 64px; }            /* reserve room at the top of the page */
+@container not style(--kiosk-header-height: 0px) {
+  :host { height: 0; }
+  .navbar { display: none !important; }
+}
 .navbar, .navbar.desktop.top {
-  top: calc(env(safe-area-inset-top, 0px) + 10px) !important;
+  top: calc(var(--kiosk-header-height, var(--header-height, 56px)) + env(safe-area-inset-top, 0px) + 10px) !important;
   bottom: unset !important;
   left: 50% !important; right: unset !important;
   transform: translate(-50%, 0) !important;
@@ -509,6 +516,17 @@ def header(title, back=None):
         "styles": styles,
         **grid(36),
     }
+
+
+def stagger(views):
+    """Number the cards so the theme's rise-in animation cascades through each view: down each
+    section, and a beat later for each section after it."""
+    for v in views:
+        for si, sec in enumerate(v["sections"][1:]):  # section 0 is the header and navbar
+            for ci, card in enumerate(sec["cards"]):
+                i = min(si * 2 + ci, 16)
+                cm = card.setdefault("card_mod", {})
+                cm["style"] = f":host {{ --lumen-i: {i}; }}\n" + cm.get("style", "")
 
 
 def apply_style(node):
@@ -800,12 +818,23 @@ def hero_background(picture):
     thumb = picture
     picture = re.sub(r"^(/api/image/serve/[^/]+)/\d+x\d+$", r"\1/original", picture)
     bg = "var(--primary-background-color)"
+
+    # Phones (up to 767px) get a tall, vivid photo; wider screens a shorter, softer one. A view
+    # background can't hold a media query, so each value steps between the two with clamp().
+    def step(phone, wide):
+        return f"clamp({wide}, {phone} + (767px - 100vw) * 100, {phone})"
+
     return ", ".join([
         # top scrim, so the floating header and the room name stay legible on bright photos
         "linear-gradient(to bottom, rgba(0,0,0,.38), rgba(0,0,0,0) 26vh)",
         # fade into the page colour below the hero
-        f"linear-gradient(to bottom, transparent 30vh, color-mix(in srgb, {bg} 55%, transparent) 50vh, "
-        f"color-mix(in srgb, {bg} 92%, transparent) 72vh, {bg} 88vh)",
+        f"linear-gradient(to bottom, transparent {step('30vh', '16vh')}, "
+        f"color-mix(in srgb, {bg} 55%, transparent) {step('50vh', '32vh')}, "
+        f"color-mix(in srgb, {bg} 92%, transparent) {step('72vh', '46vh')}, "
+        f"{bg} {step('88vh', '60vh')})",
+        # wide screens only: a veil of page colour to soften the photo (zero height on phones)
+        f"linear-gradient(color-mix(in srgb, {bg} 30%, transparent) 0 0) 0 0 / 100% "
+        f"clamp(0px, (100vw - 767px) * 100, 100vh) no-repeat",
         # a little theme colour washed over the photo, so it belongs to the page
         "radial-gradient(120% 70% at 0% 0%, color-mix(in srgb, var(--primary-color) 22%, transparent), transparent 70%)",
         f"center 30% / cover no-repeat url({json.dumps(picture)})",
@@ -1026,6 +1055,7 @@ def main():
         # Hide HA's header and sidebar; the floating navbar replaces them. ?disable_km restores them.
         config["kiosk_mode"] = {"kiosk": True}
     apply_style(config)
+    stagger(views)
 
     out = f"{URL_PATH}.json"
     with open(out, "w") as fh:
