@@ -480,16 +480,16 @@ if (!window.__lumenEnter?.isConnected) {
         const sig = cards.map(c => { const r = c.getBoundingClientRect(); return [r.x | 0, r.y | 0, r.width | 0, r.height | 0]; }).join(';');
         same = sig && sig === last ? same + 1 : 0;
         last = sig;
-        if (same < 3 && performance.now() - t0 < 1000) return requestAnimationFrame(tick);
+        if (same < 2 && performance.now() - t0 < 600) return requestAnimationFrame(tick);
         view.style.opacity = '';
         for (const c of cards) {
           const r = c.getBoundingClientRect();
           if (r.top > innerHeight || r.bottom < 0) continue;
           const bar = c.querySelector('navbar-card');
           c.animate(bar ? [{ opacity: 0 }, { opacity: 1 }]
-                        : [{ opacity: 0, translate: '0 12px' }, { opacity: 1, translate: '0 0' }],
-                    { duration: 520, easing: 'cubic-bezier(.2, .8, .2, 1)', fill: 'backwards',
-                      delay: bar ? 0 : Math.min(650, Math.max(0, r.top) * .5 + r.left * .06) });
+                        : [{ opacity: 0, translate: '0 8px' }, { opacity: 1, translate: '0 0' }],
+                    { duration: 360, easing: 'cubic-bezier(.2, .8, .2, 1)', fill: 'backwards',
+                      delay: bar ? 0 : Math.min(260, Math.max(0, r.top) * .25 + r.left * .03) });
         }
       };
       requestAnimationFrame(tick);
