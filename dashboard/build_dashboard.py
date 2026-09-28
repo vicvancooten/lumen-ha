@@ -170,7 +170,10 @@ def plural_lights(entities):
 
 def room_card(area_id, room, cols=12, rows=None, navigate=True, banner=False, aspect=None):
     """room-summary-card: area photo background, lights up when any light is on,
-    green border on motion, up to four one-tap device toggles."""
+    green border on motion, up to four one-tap device toggles.
+
+    With `banner`, a room with a photo gets a hero instead: the card turns see-through and
+    the photo becomes the page background (see hero_background), with the room name large on top."""
     entities = [{"entity_id": l, "on_color": "amber"} for l in room_lights(room)]
     entities += [{"entity_id": m, "on_color": "pink"} for m in ids(room.get("media"))[:1]]
     if room.get("vacuum"):
@@ -192,14 +195,14 @@ def room_card(area_id, room, cols=12, rows=None, navigate=True, banner=False, as
         "background": {"opacity": 70},
         # Photo cards sit on a dark base in both themes so white titles stay legible.
         "styles": {
-            "card": {"border-radius": "22px", "background-color": "#15171c"},
+            "card": {"border-radius": "28px", "background-color": PHOTO_BASE, "--lumen-photo-base": PHOTO_BASE},
             "title": {"color": "#fff", "text-shadow": "0 1px 8px rgba(0,0,0,.6)", "font-weight": "600"},
             "sensors": {"color": "rgba(255,255,255,.85)"},
         },
     }
     if not room.get("has_picture"):
         c["features"].remove("hide_room_icon")
-        c["styles"] = {"card": {"border-radius": "22px"}}
+        c["styles"] = {"card": {"border-radius": "28px"}}
     if room.get("fridge"):
         c["sensors"] = [{"entity_id": room["fridge"]["fridge_temp"], "icon": "mdi:fridge"}]
         c["sensor_classes"] = []
@@ -214,8 +217,20 @@ def room_card(area_id, room, cols=12, rows=None, navigate=True, banner=False, as
         aspect = "7/2"
     if aspect:
         c["styles"]["card"].update({"--user-grid-aspect-ratio": aspect, "aspect-ratio": aspect})
-    style = []
-    if banner:
+    style = [] if banner else [ROOM_HOVER_STYLE]
+    hero = banner and room.get("picture")
+    if hero:
+        c["features"] = [f for f in c["features"] if f not in ("full_card_actions", "multi_light_background")]
+        c["background"] = {"options": ["disable"]}
+        c["styles"]["card"].update({
+            "background-color": "transparent", "border": "none", "box-shadow": "none"})
+        c["styles"]["title"] = {
+            "color": "#fff", "font-size": "clamp(30px, 4vw, 44px)", "font-weight": "700",
+            "letter-spacing": "-.025em", "line-height": "1.05",
+            "text-shadow": "0 2px 18px rgba(0,0,0,.45)",
+        }
+        style.append(HERO_STYLE)
+    elif banner:
         c["features"].remove("full_card_actions")
         fade = "linear-gradient(to bottom, #000 45%, rgba(0,0,0,.55) 75%, transparent 100%)"
         c["styles"]["card"].update({
@@ -225,7 +240,7 @@ def room_card(area_id, room, cols=12, rows=None, navigate=True, banner=False, as
         c["styles"]["title"] = {"display": "none"}  # the header already shows the room name
         # taller photo on phones, where 7:2 is just a strip
         style.append("@media (max-width: 767px) { ha-card { --user-grid-aspect-ratio: 4/3 !important; aspect-ratio: 4/3 !important; } }")
-    if room.get("haunt"):
+    if room.get("haunt") and not hero:
         style.append(HAUNT_STYLE % (json.dumps(room["haunt"]), area_id))
     if style:
         c["card_mod"] = {"style": "\n".join(style)}
@@ -237,18 +252,58 @@ def room_card(area_id, room, cols=12, rows=None, navigate=True, banner=False, as
 # Styling (card-mod) and chrome (navbar-card + kiosk-mode)
 # --------------------------------------------------------------------------------------
 # Frosted-glass look derived from theme variables, so it works in light and dark.
+# The rise-in and hover lift match the theme's card-mod-card, so every card moves alike.
+EASE = "cubic-bezier(.2, .8, .2, 1)"
 GLASS = """
 ha-card {
   background: color-mix(in srgb, var(--card-background-color) 72%, transparent) !important;
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
   border: 1px solid color-mix(in srgb, var(--primary-text-color) 9%, transparent) !important;
-  border-radius: 22px !important;
+  border-radius: 28px !important;
   box-shadow: 0 10px 30px -12px rgba(0, 0, 0, .35) !important;
-  transition: transform .15s ease, box-shadow .15s ease;
+  transition: translate .35s EASE, box-shadow .35s EASE, border-color .35s EASE;
 }
-ha-card:hover { box-shadow: 0 14px 34px -12px rgba(0, 0, 0, .45) !important; }
-"""
+@media (hover: hover) {
+  ha-card:hover {
+    translate: 0 -2px;
+    border-color: color-mix(in srgb, var(--primary-text-color) 16%, transparent) !important;
+    box-shadow: 0 22px 44px -18px rgba(0, 0, 0, .5) !important;
+  }
+}
+@media (prefers-reduced-motion: reduce) { ha-card, ha-card:hover { transition: none; translate: none; } }
+""".replace("EASE", EASE)
+
+# Room photo cards: lift on hover while the photo slowly zooms, press in on tap.
+PHOTO_BASE = "#15171c"
+ROOM_HOVER_STYLE = """
+ha-card { transition: translate .4s EASE, scale .2s EASE, box-shadow .4s EASE !important; }
+room-background-image { position: absolute; inset: 0; transition: scale .9s EASE; }
+@media (hover: hover) {
+  ha-card:hover { translate: 0 -3px; box-shadow: 0 26px 48px -20px rgba(0, 0, 0, .6) !important; }
+  ha-card:hover room-background-image { scale: 1.06; }
+}
+ha-card:active { scale: .985; }
+@media (prefers-reduced-motion: reduce) {
+  ha-card, room-background-image { transition: none !important; }
+  ha-card:hover, ha-card:active, ha-card:hover room-background-image { translate: none; scale: none; }
+}
+""".replace("EASE", EASE)
+
+# Room page hero: the photo is the page background, so the card itself is just the room name
+# and toggles floating over it. No glass, no photo layer, no lift.
+HERO_STYLE = """
+ha-card {
+  backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+  animation: lumen-hero .7s EASE backwards;
+}
+ha-card:hover { translate: none !important; }
+room-background-image { display: none; }
+.sensors, .stats { color: rgba(255, 255, 255, .88) !important; text-shadow: 0 1px 10px rgba(0, 0, 0, .5); }
+@keyframes lumen-hero { from { opacity: 0; translate: 0 14px; } }
+@media (max-width: 767px) { ha-card { --user-grid-aspect-ratio: 5/4 !important; aspect-ratio: 5/4 !important; } }
+@media (prefers-reduced-motion: reduce) { ha-card { animation: none; } }
+""".replace("EASE", EASE)
 GLASS_TYPES = {"tile", "weather-forecast", "custom:mini-graph-card", "markdown", "custom:mushroom-template-card"}
 TITLE_STYLE = """
 .title { font-size: 30px !important; font-weight: 700 !important; letter-spacing: -.02em; }
@@ -262,7 +317,7 @@ INTER_FONT = "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;70
 NAVBAR_STYLES = """
 .navbar {
   --navbar-primary-color: var(--primary-color);
-  --navbar-border-radius: 26px;
+  --navbar-border-radius: 9999px;
 }
 .navbar-card.mobile.floating {
   margin-bottom: calc(max(env(safe-area-inset-bottom, 0px), 14px) + 6px) !important;
@@ -272,7 +327,16 @@ NAVBAR_STYLES = """
    a location listener, see NAV_MOTION_JS) and settles with a spring. Only transform and
    opacity animate, so it stays on the compositor. */
 .route { overflow: visible !important; container-type: inline-size; }
-.button { isolation: isolate; transition: transform .18s cubic-bezier(.3, .7, .4, 1); }
+.button {
+  isolation: isolate; border-radius: 9999px !important;
+  transition: transform .18s cubic-bezier(.3, .7, .4, 1), background-color .25s ease;
+}
+.button .icon, .button .image { transition: translate .3s cubic-bezier(.22, 1.3, .36, 1); }
+@media (hover: hover) {
+  .button:not(.active):hover { background: color-mix(in srgb, var(--primary-text-color) 7%, transparent); }
+  .button:not(.active):hover .icon, .button:not(.active):hover .image { translate: 0 -2px; }
+  .popup-item:hover .button { transform: scale(1.06); }
+}
 .button:active { transform: scale(.92); }
 .button.active { background: transparent !important; }
 .button.active::before {
@@ -295,6 +359,7 @@ NAVBAR_STYLES = """
 }
 @media (prefers-reduced-motion: reduce) {
   .button.active::before, .button.active .icon, .button.active .image { animation: none; }
+  .button, .button .icon, .button .image { transition: none; }
 }
 .navbar-card {
   background: color-mix(in srgb, var(--card-background-color) 70%, transparent) !important;
@@ -317,8 +382,8 @@ HEADER_STYLES = """
 .navbar-card, .navbar-card.mobile.floating, .navbar-card.desktop {
   width: 100% !important; margin: 0 !important;
   justify-content: flex-end !important; gap: 4px !important;
-  padding: 6px 8px 6px 18px !important;
-  border-radius: 20px !important;
+  padding: 6px 8px 6px 24px !important;
+  border-radius: 9999px !important;
   background: color-mix(in srgb, var(--card-background-color) 70%, transparent) !important;
   backdrop-filter: blur(22px) saturate(160%);
   -webkit-backdrop-filter: blur(22px) saturate(160%);
@@ -475,12 +540,18 @@ HAUNT_PROMPT_NO_PHOTO = (
 HAUNT_CACHE = "haunted-cache.json"
 
 # Sits between the room photo and the card content. Hidden until HAUNT_JS sets
-# --lumen-haunt-<area>; 70% opacity matches the photo layer (background.opacity).
+# --lumen-haunt-<area>. It rebuilds the photo layer exactly (the card's darkening gradient
+# and brightness filter, then the photo base showing through at 1 - background.opacity)
+# and is fully opaque, so the only thing that changes when it shows is the hair.
 HAUNT_STYLE = """
 room-background-image::after {
   content: ""; position: absolute; inset: 0; pointer-events: none;
-  background: center / cover no-repeat url(%s);
-  opacity: calc(var(--lumen-haunt-%s, 0) * .7);
+  background:
+    linear-gradient(color-mix(in srgb, var(--lumen-photo-base) calc((1 - var(--user-opacity, .7)) * 100%%), transparent) 0 0),
+    var(--user-background-image-overlay, var(--default-overlay)),
+    center / cover no-repeat url(%s);
+  filter: var(--background-filter, none);
+  opacity: var(--lumen-haunt-%s, 0);
   transition: opacity .12s;
 }
 """
@@ -715,6 +786,29 @@ def floor_view(f, areas_by_floor):
             "max_columns": 3, "dense_section_placement": True, "sections": sections}
 
 
+def hero_background(picture):
+    """View background for a room page: the room photo full-bleed and pinned to the viewport,
+    fading into the page colour, so cards scroll up over it like frosted glass. Every layer is
+    fixed (HA pins the whole background when the value contains ` fixed`), so the fade always
+    sits at the same spot on screen."""
+    # HA serves area pictures as 512px thumbnails; a full-screen background wants the original.
+    # The thumbnail (already cached by the room cards) sits underneath while that loads.
+    thumb = picture
+    picture = re.sub(r"^(/api/image/serve/[^/]+)/\d+x\d+$", r"\1/original", picture)
+    bg = "var(--primary-background-color)"
+    return ", ".join([
+        # top scrim, so the floating header and the room name stay legible on bright photos
+        "linear-gradient(to bottom, rgba(0,0,0,.38), rgba(0,0,0,0) 26vh)",
+        # fade into the page colour below the hero
+        f"linear-gradient(to bottom, transparent 30vh, color-mix(in srgb, {bg} 55%, transparent) 50vh, "
+        f"color-mix(in srgb, {bg} 92%, transparent) 72vh, {bg} 88vh)",
+        # a little theme colour washed over the photo, so it belongs to the page
+        "radial-gradient(120% 70% at 0% 0%, color-mix(in srgb, var(--primary-color) 22%, transparent), transparent 70%)",
+        f"center 30% / cover no-repeat url({json.dumps(picture)})",
+        f"center 30% / cover no-repeat url({json.dumps(thumb)}) {bg}",
+    ]) + " fixed"
+
+
 def room_view(area_id, r, floor):
     offline = []
 
@@ -836,9 +930,12 @@ def room_view(area_id, r, floor):
                         "in your house config and re-run the generator."),
             **grid(36)}], span=3))
 
-    return {"title": r["name"], "path": r["path"], "subview": True,
+    view = {"title": r["name"], "path": r["path"], "subview": True,
             "back_path": f"/{URL_PATH}/{floor['path']}", "type": "sections", "max_columns": 3,
             "dense_section_placement": True, "sections": sections}
+    if r.get("picture"):
+        view["background"] = hero_background(r["picture"])
+    return view
 
 
 # --------------------------------------------------------------------------------------
@@ -893,6 +990,7 @@ def main():
     for a in areas:
         if a["area_id"] in ROOMS:
             ROOMS[a["area_id"]]["has_picture"] = bool(a.get("picture"))
+            ROOMS[a["area_id"]]["picture"] = a.get("picture")
     # Room order follows the floor assignment in HA; rooms whose area has no floor use their `floor` key.
     areas_by_floor = {f["id"]: [a["area_id"] for a in areas
                                 if (ROOMS.get(a["area_id"], {}).get("floor") or a.get("floor_id")) == f["id"]]
