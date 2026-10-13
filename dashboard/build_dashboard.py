@@ -156,7 +156,9 @@ def nav(path):
 
 
 def scene_tap(entity):
-    return {"action": "perform-action", "perform_action": "scene.turn_on", "target": {"entity_id": entity}}
+    # The same 1.5 s fade the house automations use.
+    return {"action": "perform-action", "perform_action": "scene.turn_on", "target": {"entity_id": entity},
+            "data": {"transition": 1.5}}
 
 
 def lights_on(entities):
@@ -1599,7 +1601,7 @@ def scenes_section(r):
     lit = lights_on(lights)[3:-3] + " > 0" if lights else "true"
     latest = ("{% set ts = " + json.dumps(ids_) + " | map('states') | reject('in', ['unknown', 'unavailable']) "
               "| list %}{% set latest = ts | max if ts else '' %}")
-    cols = max(6, min(12, 36 // (len(scenes) + (1 if lights else 0))))
+    cols = max(4, min(12, 36 // (len(scenes) + (1 if lights else 0))))
     cards = [heading("Scenes", "mdi:palette-outline")]
     for s in scenes:
         style = (GLASS + latest + f"{{% if {lit} and states('{s['entity']}') == latest %}}" + SCENE_ON_STYLE
@@ -1687,7 +1689,7 @@ def hero_background(picture):
         f"color-mix(in srgb, {bg} 92%, transparent) {step('72vh', '46vh')}, "
         f"{bg} {step('88vh', '60vh')})",
         # wide screens only: a veil of page colour to soften the photo (zero height on phones)
-        f"linear-gradient(color-mix(in srgb, {bg} 30%, transparent) 0 0) 0 0 / 100% "
+        f"linear-gradient(color-mix(in srgb, {bg} var(--lumen-hero-veil, 30%), transparent) 0 0) 0 0 / 100% "
         f"clamp(0px, (100vw - 767px) * 100, 100vh) no-repeat",
         # a little theme colour washed over the photo, so it belongs to the page
         "radial-gradient(120% 70% at 0% 0%, color-mix(in srgb, var(--primary-color) 22%, transparent), transparent 70%)",
