@@ -66,6 +66,7 @@ birdnet:                     # optional: BirdNET-Go on the home page + a Birds p
     idle: camera.front_door_last_visitor             # ...or this snapshot while `wired` is off and `timer` idle
     wired: input_boolean.doorbell_wired              # optional
     timer: timer.front_door_activity                 # optional
+    activity: automation.front_door_activity         # optional: its last run is shown as "Last visitor · 2 h ago"
     name: Front door
   saezuri_app: 22d5d804_saezuri                      # optional: embed the Saezuri collage on the Birds page
   birdnet_app: db21ed7f_birdnet-go                   # optional: "Open BirdNET-Go" button (the app's slug)

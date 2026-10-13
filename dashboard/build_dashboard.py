@@ -611,7 +611,9 @@ def apply_style(node):
             apply_style(n)
     elif isinstance(node, dict):
         t = node.get("type")
-        if t in GLASS_TYPES:
+        if node.pop("_style", None) == "plain":
+            pass  # carries its own card-mod style
+        elif t in GLASS_TYPES:
             node["card_mod"] = {"style": GLASS}
         elif t == "custom:mushroom-title-card":
             node["card_mod"] = {"style": TITLE_STYLE}
@@ -880,18 +882,34 @@ def bird_card(b, tap=None, **extra):
     return card
 
 
-def camera_card(camera, name, live=True, bird=None, visibility=None, cols=24):
-    """A camera with a name and Live chip over it, an expand button, and optionally a bird card pinned below."""
+# A 1x1 transparent GIF: an `image` element of this size is an invisible, tappable layer over a picture.
+CLEAR_PIXEL = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+
+
+def camera_card(camera, name, live=True, bird=None, visibility=None, cols=24, tap_entity=None, since=None):
+    """A camera with name and Live chips over it, an expand button and, optionally, a bird card pinned below.
+    Everything over the picture opens the live view: the chips, the expand button and the picture itself.
+    A snapshot (`live=False`) opens `tap_entity`, the live camera, and says so ("Tap for live")."""
     def pinned(card, **edges):
         # picture-elements positions an element from its centre; pin to the edges instead.
         return {**card, "style": {"top": "auto", "bottom": "auto", "left": "auto", "right": "auto",
                                   "transform": "none", **edges}}
-    chips = [{"type": "template", "icon": "mdi:cctv", "content": name}]
-    chips.append({"type": "template", "icon": "mdi:circle", "icon_color": "red", "content": "Live"} if live
-                 else {"type": "template", "icon": "mdi:history", "content": "Last visitor"})
+    more = {"action": "more-info", "entity": tap_entity or camera}
+    chips = [{"type": "template", "icon": "mdi:cctv", "content": name, "tap_action": more}]
+    if live:
+        chips.append({"type": "template", "icon": "mdi:circle", "icon_color": "red", "content": "Live", "tap_action": more})
+    else:
+        if since:
+            chips.append({"type": "template", "icon": "mdi:history", "tap_action": more, "content": (
+                f"{{% set t = state_attr('{since}', 'last_triggered') %}}"
+                "{{ 'Last visitor · ' ~ relative_time(t) ~ ' ago' if t else 'Last snapshot' }}")})
+        chips.append({"type": "template", "icon": "mdi:circle", "icon_color": "grey", "content": "Tap for live",
+                      "tap_action": more})
     elements = [
+        {"type": "image", "image": CLEAR_PIXEL, "entity": tap_entity or camera, "tap_action": more,
+         "style": {"top": "0", "left": "0", "width": "100%", "height": "100%", "transform": "none"}},
         pinned({"type": "custom:mushroom-chips-card", "alignment": "start", "chips": chips}, top="12px", left="12px"),
-        {"type": "icon", "icon": "mdi:arrow-expand", "entity": camera, "tap_action": {"action": "more-info"},
+        {"type": "icon", "icon": "mdi:arrow-expand", "entity": tap_entity or camera, "tap_action": more,
          "style": {"top": "26px", "right": "26px", "color": "#fff", "--mdc-icon-size": "26px",
                    "filter": "drop-shadow(0 1px 4px rgba(0,0,0,.6))"}},
     ]
@@ -905,7 +923,8 @@ def camera_card(camera, name, live=True, bird=None, visibility=None, cols=24):
 
 
 def door_cameras(d, cols):
-    """The front door: live while the doorbell is wired or active, the last visitor's snapshot otherwise."""
+    """The front door: live while the doorbell is wired or active; otherwise the last visitor's snapshot,
+    which opens the live view when tapped (the doorbell is a battery camera that only streams on demand)."""
     wired, timer = d.get("wired"), d.get("timer")
     name = d.get("name", "Front door")
     if not (d.get("idle") and (wired or timer)):
@@ -916,7 +935,8 @@ def door_cameras(d, cols):
     idle_if = ([{"condition": "state", "entity": wired, "state_not": "on"}] if wired else []) + \
               ([{"condition": "state", "entity": timer, "state_not": "active"}] if timer else [])
     return [camera_card(d["live"], name, visibility=live_if, cols=cols),
-            camera_card(d["idle"], name, live=False, visibility=idle_if, cols=cols)]
+            camera_card(d["idle"], name, live=False, visibility=idle_if, cols=cols,
+                        tap_entity=d["live"], since=d.get("activity"))]
 
 
 def bird_tiles(b, cols, tap):
@@ -928,6 +948,13 @@ def bird_tiles(b, cols, tap):
     if b.get("top_bird"):
         tiles.append(tile(b["top_bird"], cols, name="Most heard today", icon="mdi:trophy-outline", color="amber", tap=tap))
     return tiles
+
+
+def bird_summary_tile(b, cols, tap):
+    """One quiet tile for the home page: today's species count, linking to the Birds page."""
+    if not b.get("species_today"):
+        return []
+    return [tile(b["species_today"], cols, name="Birds today", icon="mdi:bird", color="teal", tap=tap)]
 
 
 def top_species_card(b, cols=12):
@@ -967,15 +994,15 @@ def birdnet_cards(b):
     if camera and door:
         cards.append(camera_card(camera, b.get("camera_name", "Garden"), bird=bird_card(b, tap=go), cols=18))
         cards += door_cameras(door, 18)
-        cards += bird_tiles(b, 12, go)
+        cards += bird_summary_tile(b, 12, go)
         if extra:
             for t in extra:
-                t["grid_options"] = {"columns": max(36 // len(extra), 6)}
+                t["grid_options"] = {"columns": 12}
             cards += extra
         return cards
     left = (camera_card(camera, b.get("camera_name", "Garden"), bird=bird_card(b, tap=go), cols=24) if camera
             else bird_card(b, tap=go, **grid(24)))
-    side = bird_tiles(b, 12, go) + extra
+    side = bird_summary_tile(b, 12, go) + extra
     for t in side:
         t.pop("grid_options", None)
     cards.append(left)
@@ -984,10 +1011,67 @@ def birdnet_cards(b):
     return cards
 
 
+BIRD_HERO_STYLE = """
+ha-card {
+  position: relative; overflow: hidden; border-radius: 28px !important; border: none !important;
+  background: #14161c !important; height: 100%; box-sizing: border-box; display: flex; align-items: flex-end;
+  backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+  --hero-pad: clamp(14px, 2.5vw, 36px); --hero-photo: clamp(104px, 26%, 320px);
+}
+/* A blurred, darkened copy of the photo across the card, the sharp one framed on top (the source is 320x240). */
+ha-card::before {
+  content: ""; position: absolute; inset: -40px; pointer-events: none;
+  background: url("{{ state_attr('@PHOTO@', 'entity_picture') }}") center / cover;
+  filter: blur(28px) saturate(1.35) brightness(.6);
+}
+ha-card::after {
+  content: ""; position: absolute; left: var(--hero-pad); bottom: var(--hero-pad); width: var(--hero-photo);
+  aspect-ratio: 4 / 3; border-radius: 22px; pointer-events: none;
+  background: url("{{ state_attr('@PHOTO@', 'entity_picture') }}") center / cover;
+  box-shadow: 0 16px 40px -10px rgba(0, 0, 0, .65);
+}
+.container { position: relative; z-index: 1; width: 100%; height: 100%; box-sizing: border-box;
+  display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start;
+  padding: 0 16px var(--hero-pad) calc(var(--hero-photo) + var(--hero-pad) * 2); }
+"""
+# Mushroom's template card is built on Home Assistant's tile components: the text is slotted spans.
+BIRD_HERO_TEXT = """
+ha-tile-icon { display: none !important; }
+.row { height: auto !important; align-items: flex-start !important; justify-content: flex-end !important; }
+.content { height: auto !important; align-items: flex-end !important; justify-content: flex-start !important;
+  text-align: left !important; }
+ha-tile-info { flex: 0 1 auto !important; margin: 0 !important; align-items: flex-start !important; }
+span[slot=primary] { color: #fff !important; font-weight: 700 !important; line-height: 1.1 !important;
+  font-size: clamp(22px, 3.8vw, 48px) !important; text-shadow: 0 2px 18px rgba(0, 0, 0, .5); }
+span[slot=secondary] { color: rgba(255, 255, 255, .85) !important; font-size: clamp(13px, 1.5vw, 17px) !important;
+  margin-top: 4px; text-shadow: 0 1px 10px rgba(0, 0, 0, .5); }
+"""
+
+
+def bird_hero(b):
+    """Birds page hero: the last bird's photo blurred across the card and framed sharp in front, with its
+    name large beside it. All CSS, templated by card-mod from the photo entity, so it follows the latest bird."""
+    last, photo = b["last_bird"], b["photo"]
+    none = f"states('{last}') in ('unknown', 'unavailable', 'none')"
+    return {
+        "type": "custom:mushroom-template-card", "entity": last, "icon": "mdi:bird", "layout": "horizontal",
+        "primary": f"{{{{ 'No birds heard yet' if {none} else states('{last}') }}}}",
+        "secondary": (f"{{% set c = state_attr('{last}', 'confidence') %}}"
+                      f"{{% set t = state_attr('{last}', 'timestamp') %}}"
+                      f"{{% set sci = state_attr('{last}', 'scientificName') %}}"
+                      "{% if c and t %}{{ sci }} · {{ (c * 100) | round(0) | int }}% · "
+                      "{{ relative_time(as_datetime(t)) }} ago{% else %}Listening…{% endif %}"),
+        "tap_action": {"action": "none"}, "_style": "plain",
+        "card_mod": {"style": {".": BIRD_HERO_STYLE.replace("@PHOTO@", photo) + BIRD_HERO_TEXT}},
+        **grid(36, rows=6),
+    }
+
+
 def birds_view(b):
     """Birds page: the Saezuri collage (iframe via ingress), the last bird and the day's tallies."""
     src = b.get("saezuri_src")
-    tiles = [bird_card(b)] + bird_tiles(b, 12, None)
+    hero = bird_hero(b) if b.get("photo") else None
+    tiles = ([] if hero else [bird_card(b)]) + bird_tiles(b, 12, None)
     for t in tiles:
         t.pop("grid_options", None)
     for key, label, icon in (("saezuri_app", "Open Saezuri", "mdi:bird"), ("birdnet_app", "Open BirdNET-Go", "mdi:waveform")):
@@ -1000,7 +1084,7 @@ def birds_view(b):
                  {"type": "vertical-stack", "cards": tiles, **grid(12)}]
     else:
         first = [heading("Birds", "mdi:bird")] + [{**t, **grid(12)} for t in tiles]
-    sections = [section(first, span=3)]
+    sections = ([section([hero], span=3)] if hero else []) + [section(first, span=3)]
     lower = []
     if b.get("top_species"):
         lower.append(top_species_card(b, 18))
