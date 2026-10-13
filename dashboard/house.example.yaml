@@ -81,6 +81,9 @@ media:                       # optional: "Now playing" on the home page while so
     power: media_player.living_room_tv_remote # optional: power button (e.g. Android TV Remote)
     remote: remote.living_room_tv             # optional: remote pad, app shortcuts
     # remote_keys: {up: CursorUp, select: Confirm}   # optional: key names, if not Android TV Remote's (DPAD_UP...)
+    # preview: camera.living_room_tv_screen         # optional: the TV's screen behind the player, e.g. ADB
+    # preview_frame: counter.living_room_tv_frame   #   screenshots into a Local File camera, and a counter that
+    #                                               #   ticks with each new one (see ../ha/tv_preview.yaml)
     volume: media_player.soundbar             # optional: when the TV's sound goes through other speakers
     live_tv: {entity: media_player.tv, source: Watch TV}   # optional: a Live TV shortcut
     apps:                                     # optional: app shortcuts (remote.turn_on activity)

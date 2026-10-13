@@ -1508,8 +1508,56 @@ REMOTE_KEYS = {"up": "DPAD_UP", "down": "DPAD_DOWN", "left": "DPAD_LEFT", "right
 APP_ICONS = {"youtube": ("mdi:youtube", "red"), "netflix": ("mdi:netflix", "red"),
              "spotify": ("mdi:spotify", "green"), "plex": ("mdi:plex", "amber"), "kodi": ("mdi:kodi", "blue")}
 PLAYBACK = ["media_previous_track", "media_play_pause", "media_next_track"]
+# A media card: what's playing over its own picture, the TV's screen or the album art. On a wide card the
+# picture fills the right (a 16:9 frame at the card's 248 px is ~440 px wide) and fades in, so the title and
+# controls on the left stay readable; on a narrow card or a phone it fills the top instead. Two layers: the
+# previous frame (already loaded) under the new one, so a refresh never flashes empty. @PIC@ and @PREV@ are
+# template expressions.
+MEDIA_CARD_WIDE = """
+ha-card {
+  background:
+    linear-gradient(90deg, var(--card-background-color) calc(100% - 440px), color-mix(in srgb, var(--card-background-color) 55%, transparent) calc(100% - 340px), transparent calc(100% - 190px)),
+    linear-gradient(0deg, color-mix(in srgb, var(--card-background-color) 55%, transparent), transparent 40%),
+    {% if pic %}url('{{ pic }}') right center / auto 100% no-repeat,{% endif %}
+    {% if prev %}url('{{ prev }}') right center / auto 100% no-repeat,{% endif %}
+    var(--card-background-color) !important;
+}
+.content { max-width: 50%; }
+hui-card-features { max-width: 50%; }
+"""
+MEDIA_CARD_NARROW = """
+ha-card {
+  background:
+    linear-gradient(0deg, var(--card-background-color) 24%, color-mix(in srgb, var(--card-background-color) 55%, transparent) 46%, transparent 72%),
+    linear-gradient(180deg, color-mix(in srgb, var(--card-background-color) 85%, transparent),
+                    color-mix(in srgb, var(--card-background-color) 55%, transparent) 30%, transparent 55%),
+    {% if pic %}url('{{ pic }}') center top / cover no-repeat,{% endif %}
+    {% if prev %}url('{{ prev }}') center top / cover no-repeat,{% endif %}
+    var(--card-background-color) !important;
+}
+.content, hui-card-features { max-width: none; }
+"""
+MEDIA_CARD_BASE = """
+{% set pic = @PIC@ %}{% set prev = @PREV@ %}
+.container { height: 100%; justify-content: space-between; }
+.row, .content { align-items: flex-start !important; }
+.content { padding: 18px 18px 0 16px !important; box-sizing: border-box; }
+span[slot=primary] {
+  font-size: 19px !important; font-weight: 650 !important; line-height: 1.3 !important; letter-spacing: -.01em;
+  white-space: normal !important; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+}
+span[slot=secondary] { font-size: 13px !important; margin-top: 4px; }
+"""
+
+
+def media_card_style(wide):
+    """Wide cards fade the picture in from the right, and stack like narrow ones on phones."""
+    if wide:
+        return MEDIA_CARD_BASE + MEDIA_CARD_WIDE + "@media (max-width: 600px) {\n" + MEDIA_CARD_NARROW + "}\n"
+    return MEDIA_CARD_BASE + MEDIA_CARD_NARROW
+
 PAD_STYLE = """
-ha-card { border-radius: 20px !important; height: 56px; justify-content: center; padding: 0 !important; }
+ha-card { border-radius: 20px !important; height: @H@px; justify-content: center; padding: 0 !important; }
 ha-card:active { scale: .94; transition: scale .1s; }
 """
 
@@ -1526,8 +1574,10 @@ def tv_on(t):
     return {"condition": "state", "entity": t.get("power", t["entity"]), "state": "on"}
 
 
-def player_card(entity, name, cols, rows=None, volume=False, tap=None):
-    """What's playing on a Lumen card: the artwork (or the app's icon), title and artist, play/pause."""
+def player_card(entity, name, cols, rows=4, volume=False, tap=None, pic=None, prev=None):
+    """What's playing on a Lumen media card: title and artist, previous/play-pause/next (and the volume),
+    over the card's picture: `pic` (and the frame before, `prev`) as template expressions, or the player's
+    own artwork. The app's icon says where it's playing. Tapping opens the player's full controls."""
     a = lambda k: f"state_attr('{entity}', '{k}')"
     app = f"({a('app_name')} or '') | lower"
     icons = "{%s}" % ", ".join(f"'{k}': '{v[0]}'" for k, v in APP_ICONS.items())
@@ -1535,54 +1585,64 @@ def player_card(entity, name, cols, rows=None, volume=False, tap=None):
     # Power lives on the remote pad; here just previous, play/pause and next.
     feats = [{"type": "media-player-playback", "controls": PLAYBACK}] + \
         ([{"type": "media-player-volume-slider"}] if volume else [])
+    style = media_card_style(cols > 12).replace("@PIC@", pic or a("entity_picture")).replace("@PREV@", prev or "none")
     return {"type": "custom:mushroom-template-card", "entity": entity,
             "primary": "{{ %s or %s or '%s' }}" % (a("media_title"), a("app_name"), name),
             "secondary": ("{{ [%s, %s if %s else '%s'] | select | join(' · ') }}"
                           % (a("media_artist"), a("app_name"), a("media_title"), name)),
-            "picture": "{{ %s or '' }}" % a("entity_picture"),
             "icon": "{{ %s.get(%s, 'mdi:play-circle-outline') }}" % (icons, app),
             "icon_color": "{{ %s.get(%s, 'pink') }}" % (colors, app),
             "features": feats, "features_position": "bottom",
-            "tap_action": tap or {"action": "more-info"}, **grid(cols, rows)}
+            "tap_action": tap or {"action": "more-info"}, "_style": "plain",
+            "card_mod": {"style": GLASS + style}, **grid(cols, rows)}
 
 
-def pad_button(icon, tap):
+def pad_button(icon, tap, height=56):
     return {"type": "button", "icon": icon, "show_name": False, "show_state": False, "icon_height": "22px",
             "tap_action": tap, "hold_action": {"action": "none"}, "_style": "plain",
-            "card_mod": {"style": GLASS + PAD_STYLE}}
+            "card_mod": {"style": GLASS + PAD_STYLE.replace("@H@", str(height))}}
 
 
-def remote_pad(t, corner, cols):
-    """One card, three rows of three: back, up, home / left, OK, right / power, down and `corner`."""
+def remote_pad(t, corner, cols, rows=3):
+    """One card, three rows of three: back, up, home / left, OK, right / power, down and `corner`. Given more
+    grid rows, the buttons grow to fill them."""
+    h = (rows * 56 + (rows - 1) * 8 - 16) // 3
     keys = {**REMOTE_KEYS, **t.get("remote_keys", {})}
     key = lambda k, icon: pad_button(icon, {"action": "perform-action", "perform_action": "remote.send_command",
-                                            "target": {"entity_id": t["remote"]}, "data": {"command": keys[k]}})
+                                            "target": {"entity_id": t["remote"]}, "data": {"command": keys[k]}}, h)
     power = ({"action": "perform-action", "perform_action": "media_player.toggle",
               "target": {"entity_id": t["power"]}} if t.get("power") else
              {"action": "perform-action", "perform_action": "remote.toggle", "target": {"entity_id": t["remote"]}})
     buttons = [key("back", "mdi:arrow-left"), key("up", "mdi:chevron-up"), key("home", "mdi:home-outline"),
                key("left", "mdi:chevron-left"), key("select", "mdi:circle-outline"), key("right", "mdi:chevron-right"),
-               pad_button("mdi:power", power), key("down", "mdi:chevron-down"), corner]
-    return {"type": "grid", "columns": 3, "square": False, "cards": buttons, **grid(cols, 3)}
+               pad_button("mdi:power", power, h), key("down", "mdi:chevron-down"), corner(h)]
+    return {"type": "grid", "columns": 3, "square": False, "cards": buttons, **grid(cols, rows)}
 
 
 def tv_cards(m, wide, full=False):
-    """The TV: what's on with play/pause, the volume of whatever plays the sound, and the remote pad. Wide
-    (a three-column section) puts the pad beside the player; narrow stacks them. On the home page the pad's
-    corner button opens the Media page; on the Media page itself it's the TV's menu key."""
+    """The TV: one media card (what's on, play/pause, over the TV's own screen when there's a `preview`
+    camera and a `preview_frame` counter that ticks with every new screenshot), the remote pad beside it,
+    and the volume of whatever plays the sound under the pad. Wide (a three-column section) side by side,
+    narrow stacked. On the home page the pad's corner button opens the Media page; on the Media page itself
+    it's the TV's menu key."""
     t = m["tv"]
-    name = t.get("name", "TV")
-    player = player_card(t["entity"], name, 24 if wide else 12, 2, tap=nav(media_path()) if not full else None)
-    volume = tile(t.get("volume", t["entity"]), 24 if wide else 12, name="Volume", icon="mdi:volume-high",
+    pic = prev = None
+    if t.get("preview") and t.get("preview_frame"):
+        url = f"state_attr('{t['preview']}', 'entity_picture')"
+        frame = f"states('{t['preview_frame']}') | int(0)"
+        pic = f"({url} ~ '&v=' ~ ({frame})) if {url} else none"
+        prev = f"({url} ~ '&v=' ~ ({frame} - 1)) if {url} else none"
+    player = player_card(t["entity"], t.get("name", "TV"), 24 if wide else 12, pic=pic, prev=prev)
+    volume = tile(t.get("volume", t["entity"]), 12, name="Volume", icon="mdi:volume-high",
                   color="primary", hide_state=True, features=[{"type": "media-player-volume-slider"}])
     volume["features_position"] = "inline"
     if not t.get("remote"):
         return [player, volume]
-    corner = (pad_button("mdi:menu", {"action": "perform-action", "perform_action": "remote.send_command",
-                                      "target": {"entity_id": t["remote"]},
-                                      "data": {"command": {**REMOTE_KEYS, **t.get("remote_keys", {})}["menu"]}})
-              if full else pad_button("mdi:dots-horizontal", nav(media_path())))
-    # In this order the section's grid tucks the pad in beside the player and the volume.
+    menu = {**REMOTE_KEYS, **t.get("remote_keys", {})}["menu"]
+    corner = ((lambda h: pad_button("mdi:menu", {"action": "perform-action", "perform_action": "remote.send_command",
+                                                 "target": {"entity_id": t["remote"]}, "data": {"command": menu}}, h))
+              if full else (lambda h: pad_button("mdi:dots-horizontal", nav(media_path()), h)))
+    # In this order the section's grid puts the pad beside the card and the volume under the pad.
     return [player, remote_pad(t, corner, 12), volume]
 
 
@@ -1590,7 +1650,7 @@ def music_cards(m, cols):
     """A card per music player, shown while it plays."""
     out = []
     for p in ents(m.get("players")):
-        c = player_card(p["entity"], p.get("name", friendly(p["entity"])), cols, volume=True, tap=nav(media_path()))
+        c = player_card(p["entity"], p.get("name", friendly(p["entity"])), cols, volume=True)
         c["visibility"] = [{"condition": "state", "entity": p["entity"], "state": "playing"}]
         out.append(c)
     return out
@@ -1633,7 +1693,7 @@ def yamp(entities, cols=24, height=380, actions=None, **extra):
          "match_theme": True, "control_layout": "modern", "adaptive_controls": True,
          "display_timestamps": True, "extend_artwork": True, "artwork_object_fit": "cover",
          "artwork_position": "center center", "show_chip_row": "always", "card_height": height,
-         "idle_timeout_ms": 0, "dim_chips_on_idle": False, "default_search_filter": "radio",
+         "idle_timeout_ms": 0, "dim_chips_on_idle": False, "default_search_filter": "all",
          "default_search_favorites": True, "search_view": "card", "search_card_columns": 4,
          "volume_mode": "slider", "_style": "plain", "card_mod": {"style": GLASS + MEDIA_STYLE},
          "media_artwork_overrides": [{"missing_art_url": MEDIA_FALLBACK_ART}], "idle_image": MEDIA_FALLBACK_ART,

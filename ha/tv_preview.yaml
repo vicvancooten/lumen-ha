@@ -1,0 +1,46 @@
+# Live preview of an Android / Google TV for Lumen's media card (`media.tv.preview` + `preview_frame`).
+#
+# 1. On the TV: Settings > System > About, press "Android TV OS build" 7 times; then Developer options >
+#    USB debugging on.
+# 2. In Home Assistant add the Android Debug Bridge integration (androidtv) for the TV's IP and accept the
+#    "Allow USB debugging?" prompt on the TV ("Always allow").
+# 3. Add a Local File camera (UI) with file path /media/living_room_tv.png, and a counter helper
+#    counter.living_room_tv_frame.
+# 4. Add this automation. While the TV is on and someone is home it takes a screenshot every ~10 s
+#    (the built-in screencap refreshes once a minute at most). /media needs a login; /config/www doesn't.
+#    Protected apps (Netflix, Disney+) show black.
+alias: Living room TV preview
+mode: single
+max_exceeded: silent
+triggers:
+  - trigger: state
+    entity_id: media_player.living_room_tv_adb
+  - trigger: homeassistant
+    event: start
+  - trigger: time_pattern
+    minutes: /5
+conditions: &on
+  - condition: not
+    conditions:
+      - condition: state
+        entity_id: media_player.living_room_tv_adb
+        state: ["off", unavailable, unknown, standby]
+  - condition: numeric_state
+    entity_id: zone.home
+    above: 0
+actions:
+  - repeat:
+      while: *on
+      sequence:
+        - action: androidtv.adb_command
+          target: {entity_id: media_player.living_room_tv_adb}
+          data: {command: screencap -p /sdcard/lumen_preview.png}
+          continue_on_error: true
+        - action: androidtv.download
+          target: {entity_id: media_player.living_room_tv_adb}
+          data: {device_path: /sdcard/lumen_preview.png, local_path: /media/living_room_tv.png}
+          continue_on_error: true
+        - action: counter.increment
+          target: {entity_id: counter.living_room_tv_frame}
+          continue_on_error: true
+        - delay: {seconds: 3}
