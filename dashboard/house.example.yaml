@@ -45,6 +45,8 @@ quick_settings:              # 3×3 grid of tiles on the home page
   - {entity: todo.shopping_list, name: Groceries, icon: mdi:cart-outline, color: cyan, action: todo}
 
 # night_mode: input_boolean.night_mode   # optional: the greeting says when it's on
+# alarm_mode: input_boolean.alarm_mode   # optional: a shield chip on the home page toggles it
+#                                        # (asks first); red and in the greeting while it's on
 
 energy:                      # optional; the heading and power graph open the Energy dashboard
   dashboard: /energy

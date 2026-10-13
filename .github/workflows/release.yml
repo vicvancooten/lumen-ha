@@ -1,0 +1,47 @@
+name: Release
+
+# Every merged pull request into main becomes a release, so HACS offers it as an update.
+# The version bumps the patch number by default; label the PR `release:minor` or
+# `release:major` for a bigger step, or `release:skip` to merge without releasing.
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish release
+    if: github.event.pull_request.merged && !contains(github.event.pull_request.labels.*.name, 'release:skip')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Next version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+        run: |
+          last=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName -q .tagName 2>/dev/null || echo v0.0.0)
+          IFS=. read -r major minor patch <<< "${last#v}"
+          if   jq -e 'index("release:major")' <<< "$LABELS" >/dev/null; then major=$((major + 1)) minor=0 patch=0
+          elif jq -e 'index("release:minor")' <<< "$LABELS" >/dev/null; then minor=$((minor + 1)) patch=0
+          else patch=$((patch + 1)); fi
+          echo "last=$last" >> "$GITHUB_OUTPUT"
+          echo "tag=v$major.$minor.$patch" >> "$GITHUB_OUTPUT"
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          LAST: ${{ steps.version.outputs.last }}
+          SHA: ${{ github.event.pull_request.merge_commit_sha }}
+        run: |
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --target "$SHA" \
+            --title "Lumen ${TAG#v}" --generate-notes --notes-start-tag "$LAST"
