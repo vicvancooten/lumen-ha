@@ -108,6 +108,33 @@ You also need Python 3.10+ on any machine that can reach Home Assistant.
    The generator creates the dashboard if it doesn't exist yet and adds the Inter font as a dashboard
    resource. Re-run it whenever you add devices or rooms.
 
+### BirdNET-Go (optional)
+
+If you run [BirdNET-Go](https://github.com/tphakala/birdnet-go) (e.g. as a Home Assistant app), the home
+page can show the last bird heard, with its photo and confidence, plus today's species and detection counts
+and the most-heard bird.
+
+1. Copy `ha/birdnet_go.yaml` to `/config/packages/birdnet_go.yaml` (see the comments in the file for the
+   `packages:` line and the host to edit), and restart Home Assistant. It uses plain REST sensors against
+   BirdNET-Go's API, so no MQTT broker is needed.
+2. Add the `birdnet:` section from `house.example.yaml` to your `house.yaml` and regenerate.
+
+The block is a full-width hero. With `camera:` set it shows the live camera with the last bird (photo,
+confidence, time ago) laid over it; add `door_camera:` for a second camera beside it (live while the
+doorbell is active, the last visitor otherwise). Tapping a bird opens a **Birds** page with the Saezuri
+collage embedded, today's species and the latest detections; `room:` adds the same detail to a room page.
+
+The collage is embedded through Home Assistant's ingress. The browser needs an `ingress_session` cookie for
+that, which the frontend normally sets only when you open the app's own panel, so the generator's navbar
+refreshes one in the background (at most every 20 minutes). The app's ingress URL changes when it is
+reinstalled, so regenerate the dashboard after that.
+
+### Keeping hand-made pages (optional)
+
+Regenerating replaces the whole dashboard, so anything added in the HA editor is lost. Export what you
+want to keep to a JSON file and name it under `overlay:` in `house.yaml`: whole views (e.g. a Cameras
+page) and sections inserted into generated views. See `house.example.yaml` for the format.
+
 ### Using the dashboard
 
 - **Bottom bar:** Home, one tab per floor, and **More** (Edit dashboard, Energy, History, Map,

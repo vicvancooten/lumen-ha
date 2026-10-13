@@ -49,6 +49,34 @@ energy:                      # optional
     - {entity: sensor.gas_consumption, name: Gas, icon: mdi:fire, color: deep-orange}
     - {entity: sensor.grid_fossil_percentage, name: Fossil grid, icon: mdi:factory, color: blue-grey}
 
+birdnet:                     # optional: BirdNET-Go on the home page + a Birds page (sensors: ../ha/birdnet_go.yaml)
+  title: Outside             # heading of the home-page block
+  last_bird: sensor.birdnet_go_last_bird
+  photo: image.birdnet_go_last_bird_photo
+  species_today: sensor.birdnet_go_species_today
+  detections_today: sensor.birdnet_go_detections_today
+  top_bird: sensor.birdnet_go_top_bird_today
+  top_species: sensor.birdnet_go_top_species_today   # optional: species bars on the Birds page
+  recent: sensor.birdnet_go_recent_detections        # optional: latest detections on the Birds page
+  camera: camera.garden                              # optional: live camera with the last bird laid over it
+  camera_name: Garden
+  camera_page: /home-dashboard/cameras               # optional: where the block's heading goes
+  door_camera:                                       # optional: a second camera beside it
+    live: camera.front_door                          # shown live...
+    idle: camera.front_door_last_visitor             # ...or this snapshot while `wired` is off and `timer` idle
+    wired: input_boolean.doorbell_wired              # optional
+    timer: timer.front_door_activity                 # optional
+    name: Front door
+  saezuri_app: 22d5d804_saezuri                      # optional: embed the Saezuri collage on the Birds page
+  birdnet_app: db21ed7f_birdnet-go                   # optional: "Open BirdNET-Go" button (the app's slug)
+  room: garden                                       # optional: add bird detail to this room's page
+  extra_tiles:                                       # optional: more tiles under the cameras
+    - {entity: light.garden, name: Garden light, color: amber}
+
+# overlay: overlay.json      # optional: hand-made views and sections merged into the generated dashboard
+#   (JSON: {"views": [<whole view, no header section>], "sections": [{"view": "garden", "index": 1, "section": {...}}]}
+#    `index` counts from the first section under the header. A view with an existing path replaces it.)
+
 # haunted:                   # optional: now and then, hair creeps out of a corner of a room photo
 #   every: 100               # average seconds between appearances, per room (randomised 50-150%)
 #   duration: 1              # seconds it stays visible
