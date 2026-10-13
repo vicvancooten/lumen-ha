@@ -859,7 +859,9 @@ def home_view(areas_by_floor):
         "title": greeting,
         "subtitle": ("{{ now().strftime('%A %-d %B') }} · " + plural_lights(all_lights()) +
                      (f"{{{{ ' · 🌙 Night mode' if is_state('{CFG['night_mode']}', 'on') else '' }}}}"
-                      if CFG.get("night_mode") else "")),
+                      if CFG.get("night_mode") else "") +
+                     (f"{{{{ ' · 🛡️ Alarm on' if is_state('{CFG['alarm_mode']}', 'on') else '' }}}}"
+                      if CFG.get("alarm_mode") else "")),
         **grid(12),
     }]
 
@@ -884,6 +886,15 @@ def home_view(areas_by_floor):
                                   f"{{{{ states('{kind}')|upper }}}} "
                                   "{{ 'today' if d == 0 else 'tomorrow' if d == 1 else 'in ' ~ d ~ 'd' }}"),
                       "tap_action": {"action": "more-info"}})
+    alarm = CFG.get("alarm_mode")
+    if alarm:
+        on = f"is_state('{alarm}', 'on')"
+        chips.append({"type": "template", "entity": alarm,
+                      "icon": f"{{{{ 'mdi:shield-home' if {on} else 'mdi:shield-off-outline' }}}}",
+                      "icon_color": f"{{{{ 'red' if {on} else 'disabled' }}}}",
+                      "content": f"{{{{ 'Alarm on' if {on} else 'Alarm' }}}}",
+                      "tap_action": {"action": "toggle", "confirmation": {"text": "Turn Alarm mode on or off?"}},
+                      "hold_action": {"action": "more-info"}})
     if chips:
         welcome.append({"type": "custom:mushroom-chips-card", "chips": chips, **grid(12)})
     if CFG.get("weather"):
