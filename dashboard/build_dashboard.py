@@ -17,6 +17,7 @@ import os
 import re
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 
@@ -553,7 +554,7 @@ def navbar():
 
     # Tab index per page (rooms map to their floor's tab), used by the sliding indicator. Floors with
     # `nav: false` move to the More menu; `nav_tabs` adds tabs for other pages (e.g. Outside).
-    home_pages = [f"/{URL_PATH}/{p}" for p in ("home", "energy", "vacuum")]
+    home_pages = [f"/{URL_PATH}/{p}" for p in ("home", "energy", "vacuum", "media")]
     tabs = {p: 0 for p in home_pages}
     shown = [f for f in FLOORS if f.get("nav", True)]
     hidden = [f for f in FLOORS if not f.get("nav", True)]
@@ -649,7 +650,7 @@ def apply_style(node):
         for n in node:
             apply_style(n)
     elif isinstance(node, dict):
-        t = node.get("type")
+        t = node.get("type") if isinstance(node.get("type"), str) else None
         if node.pop("_style", None) == "plain":
             pass  # carries its own card-mod style
         elif t in GLASS_TYPES:
@@ -911,6 +912,12 @@ def home_view(areas_by_floor):
     energy = CFG.get("energy")
     if energy:
         sections.append(section(energy_cards(energy)))
+
+    media = CFG.get("media")
+    if media:
+        playing = section(media_hero(media), span=3)
+        playing["visibility"] = media_on(media)
+        sections.append(playing)
 
     if CFG.get("birdnet"):
         sections.append(section(birdnet_cards(CFG["birdnet"]), span=3))
@@ -1257,28 +1264,40 @@ def energy_path():
     return f"/{URL_PATH}/energy"
 
 
-def apex(series, title=None, span="24h", start="day", height=170, offset=None, cols=12, **extra):
-    """apexcharts-card with Lumen's quiet chart styling: no toolbar, faint grid, rounded columns."""
+def apex(series, title=None, span="24h", start="day", height=170, offset=None, cols=12, header=None, **extra):
+    """apexcharts-card drawn like Lumen's mini graphs: a soft gradient area for electricity over rounded gas
+    columns, no toolbar, axes or legend clutter, and (optionally) the totals large in the header."""
+    hourly = span.endswith("h")
+    in_chart = [x for x in series if x.get("show", {}).get("in_chart", True)]
     c = {
         "type": "custom:apexcharts-card",
         "graph_span": span,
-        "header": {"show": bool(title), "title": title or "", "show_states": False},
+        "header": header or {"show": bool(title), "title": title or "", "show_states": False},
         "series": series,
         "yaxis": [{"id": "kwh", "show": False, "min": 0}, {"id": "gas", "show": False, "min": 0, "opposite": True}],
         "apex_config": {
             "chart": {"height": height, "toolbar": {"show": False}, "zoom": {"enabled": False},
-                      "fontFamily": "inherit", "background": "transparent"},
-            "grid": {"borderColor": "rgba(127,127,127,.14)", "strokeDashArray": 3,
-                     "padding": {"left": 4, "right": 4, "top": -8}},
-            "plotOptions": {"bar": {"borderRadius": 4, "columnWidth": "72%"}},
+                      "fontFamily": "inherit", "background": "transparent", "parentHeightOffset": 0,
+                      "animations": {"enabled": False}},
+            "grid": {"show": False, "padding": {"left": 6, "right": 6, "top": -14, "bottom": -6}},
+            "plotOptions": {"bar": {"borderRadius": 3 if hourly else 5, "borderRadiusApplication": "end",
+                                    "columnWidth": "55%" if hourly else "46%"}},
+            "fill": {"type": ["gradient" if x.get("type") == "area" else "solid" for x in in_chart],
+                     "gradient": {"type": "vertical", "shadeIntensity": 0, "opacityFrom": .45, "opacityTo": .02,
+                                  "stops": [0, 95]}},
             "dataLabels": {"enabled": False},
-            "legend": {"show": True, "position": "top", "horizontalAlign": "right", "fontSize": "12px",
-                       "markers": {"size": 5, "shape": "circle"}, "itemMargin": {"horizontal": 6}},
-            "xaxis": {"labels": {"style": {"fontSize": "11px"}, "datetimeUTC": False,
-                                 "format": "HH:mm" if span.endswith("h") else "d MMM"},
-                      "axisBorder": {"show": False}, "axisTicks": {"show": False}},
-            "tooltip": {"shared": True, "x": {"format": "HH:mm" if span.endswith("h") else "ddd d MMM"}},
+            "legend": {"show": False},
+            "markers": {"size": 0, "hover": {"size": 4}},
+            "xaxis": {"labels": {"style": {"fontSize": "11px", "colors": "var(--secondary-text-color)"},
+                                 "datetimeUTC": False, "format": "HH:mm" if hourly else "d MMM",
+                                 "hideOverlappingLabels": True},
+                      "tickAmount": 6 if hourly else 7,
+                      "axisBorder": {"show": False}, "axisTicks": {"show": False},
+                      "crosshairs": {"stroke": {"color": "rgba(127,127,127,.35)", "dashArray": 3}},
+                      "tooltip": {"enabled": False}},
+            "tooltip": {"shared": True, "x": {"format": "HH:mm" if hourly else "ddd d MMM"}},
         },
+        "card_mod": {"style": GLASS + APEX_STYLE}, "_style": "plain",
         **grid(cols),
     }
     if start:
@@ -1287,37 +1306,69 @@ def apex(series, title=None, span="24h", start="day", height=170, offset=None, c
     return c
 
 
-def usage_series(e, period="hour"):
+# The header reads like a mini graph's: a quiet title, the totals large underneath.
+APEX_STYLE = """
+ha-card { padding: 4px 4px 2px; }
+#header { padding: 12px 12px 0 !important; }
+#header__title { font-size: 16px !important; font-weight: 400 !important; opacity: .7; padding-bottom: 2px; }
+#header__states { gap: 18px; justify-content: flex-start !important; }
+#states__state { padding: 0 !important; }
+#state__value { font-size: 26px !important; font-weight: 400 !important; letter-spacing: -.01em; }
+#state__value #uom { font-size: 13px !important; font-weight: 500 !important; opacity: .7; }
+#state__name { font-size: 11px !important; opacity: .6 !important; text-transform: uppercase; letter-spacing: .06em; }
+"""
+
+
+def usage_series(e, period="hour", area=True):
     """Electricity per period from the power sensor's mean (a kW mean over an hour is that hour's kWh),
     gas per period from the meter's change."""
     kw = 1 if e.get("power_unit", "kW") == "kW" else 0.001
     factor = kw * (24 if period == "day" else 1)
-    return [
-        {"entity": e["graph"], "name": "Electricity", "type": "column", "yaxis_id": "kwh", "color": ELECTRIC_COLOR,
-         "unit": " kWh", "float_precision": 2, "transform": f"return x * {factor};",
-         "statistics": {"type": "mean", "period": period, "align": "start"}},
-        {"entity": e["gas"], "name": "Gas", "type": "column", "yaxis_id": "gas", "color": GAS_COLOR,
-         "unit": " m³", "float_precision": 2, "statistics": {"type": "change", "period": period, "align": "start"}},
-    ]
+    elec = {"entity": e["graph"], "name": "Electricity", "yaxis_id": "kwh", "color": ELECTRIC_COLOR,
+            "unit": " kWh", "float_precision": 2, "transform": f"return x * {factor};",
+            "statistics": {"type": "mean", "period": period, "align": "start"}, "show": {"in_header": False},
+            "extend_to": False}
+    elec.update({"type": "area", "curve": "smooth", "stroke_width": 2.5} if area else
+                {"type": "column", "opacity": .95})
+    return [elec,
+            {"entity": e["gas"], "name": "Gas", "type": "column", "yaxis_id": "gas", "color": GAS_COLOR,
+             "opacity": .9, "unit": " m³", "float_precision": 2, "show": {"in_header": False},
+             "extend_to": False, "transform": "return x >= 0.01 ? x : null;",
+             "statistics": {"type": "change", "period": period, "align": "start"}}]
 
 
+def totals_header(e, title):
+    """Today's electricity and gas, large in the chart header (needs daily utility meters in `today`)."""
+    t = e.get("today") or {}
+    series = [{"entity": t[k], "name": name, "color": col, "unit": unit, "float_precision": prec,
+               "show": {"in_chart": False, "in_header": True}}
+              for k, name, col, unit, prec in (("electricity", "Electricity", ELECTRIC_COLOR, " kWh", 1),
+                                               ("gas", "Gas", GAS_COLOR, " m³", 2)) if t.get(k)]
+    return series, {"show": True, "title": title, "show_states": bool(series), "colorize_states": False}
+
+
+# The AI's story, quietly: a plain card, the icon says how the day went.
 INSIGHT_STYLE = """
-ha-card { overflow: hidden; }
-ha-card::before {
-  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .9;
-  background: radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--primary-color) 16%, transparent), transparent 60%),
-              radial-gradient(90% 120% at 100% 100%, color-mix(in srgb, #ff8a4c 12%, transparent), transparent 60%);
-}
 .row, .content { height: auto !important; align-items: flex-start !important; }
 ha-tile-info { padding: 4px 0; }
 span[slot=primary] { white-space: normal !important; font-size: 15px !important; line-height: 1.35 !important; }
-span[slot=secondary] { white-space: normal !important; line-height: 1.45 !important; margin-top: 4px; }
-ha-tile-icon { --tile-icon-color: var(--primary-color); }
+span[slot=secondary] { white-space: normal !important; line-height: 1.5 !important; margin-top: 4px; }
 """
+RATING = {"good": ("mdi:leaf", "green", "Better than usual"),
+          "usual": ("mdi:scale-balance", "blue-grey", "About usual"),
+          "high": ("mdi:alert-circle-outline", "deep-orange", "Higher than usual")}
 
 
-def insight_card(text, title=None, icon="mdi:creation", color="deep-purple", tap=None, cols=12):
-    """A few lines of the AI's energy story: a gradient-tinted card that wraps its text."""
+def rating_template(entity, field):
+    """Pick the icon, colour or label for the AI's good/usual/high rating."""
+    i = {"icon": 0, "color": 1, "label": 2}[field]
+    m = ", ".join(f"'{k}': '{v[i]}'" for k, v in RATING.items())
+    fallback = {"icon": "mdi:creation", "color": "amber", "label": "The day in energy"}[field]
+    return "{{ {%s}.get(states('%s') | lower | trim, '%s') }}" % (m, entity, fallback)
+
+
+def insight_card(text, title=None, icon="mdi:creation", color="amber", tap=None, cols=12):
+    """A few lines of the AI's energy story on a plain card that wraps its text."""
     c = {"type": "custom:mushroom-template-card", "icon": icon, "icon_color": color,
          "primary": title or f"{{{{ states('{text}') }}}}",
          "secondary": f"{{{{ states('{text}') }}}}" if title else "",
@@ -1328,7 +1379,7 @@ def insight_card(text, title=None, icon="mdi:creation", color="deep-purple", tap
 
 def energy_cards(e):
     """Home page: today's power curve and hour-by-hour use (both open the Energy dashboard), and the AI's
-    one-line story of the day, which opens the Energy page."""
+    verdict on the day, which opens the Energy page."""
     dash = e.get("dashboard", "/energy")
     cards = [heading("Energy", "mdi:lightning-bolt", tap=dash,
                      badges=[badge(b["entity"], b.get("color"), icon=b.get("icon"),
@@ -1341,12 +1392,17 @@ def energy_cards(e):
                               {"value": 2, "color": "#eb3b5a"}],
             tap_action={"action": "navigate", "navigation_path": dash}))
     if e.get("graph") and e.get("gas"):
-        cards.append(apex(usage_series(e), "Today, hour by hour", height=150))
+        totals, head = totals_header(e, "Today, hour by hour")
+        cards.append(apex(usage_series(e) + totals, height=120, header=head))
     ins = e.get("insight")
     if ins:
+        r = ins.get("rating")
         cards.append(insight_card(ins["headline"], title="{{ states('%s') }}" % ins["headline"],
+                                  icon=rating_template(r, "icon") if r else "mdi:creation",
+                                  color=rating_template(r, "color") if r else "amber",
                                   tap=nav(energy_path())))
-        cards[-1]["secondary"] = "Tap for the full story"
+        cards[-1]["secondary"] = ("{{ states('%s') }}" % ins["verdict"]) if ins.get("verdict") else \
+            "Tap for the full story"
     return cards
 
 
@@ -1357,17 +1413,24 @@ def energy_view(e):
     ins = e.get("insight") or {}
     sections = []
     if ins:
+        r = ins.get("rating")
+        label = (rating_template(r, "label") + " · ") if r else ""
         story = [{"type": "custom:mushroom-title-card", "title": "{{ states('%s') }}" % ins["headline"],
-                  "subtitle": ("✨ The day in energy · written {{ relative_time(states.%s.last_changed) }} ago"
-                               % ins["headline"]), **grid(36)}]
-        for key, label, icon, color in (("gas", "Gas", "mdi:fire", "deep-orange"),
-                                        ("power", "Electricity", "mdi:flash", "deep-purple"),
-                                        ("tip", "Tip", "mdi:lightbulb-on-outline", "amber")):
+                  "subtitle": label + ("written {{ relative_time(states.%s.last_changed) }} ago" % ins["headline"]),
+                  **grid(36)}]
+        cards = (("verdict", "Verdict", rating_template(r, "icon") if r else "mdi:scale-balance",
+                  rating_template(r, "color") if r else "blue-grey", 12),
+                 ("waste", "Wasted power", "mdi:power-plug-off-outline", "red", 12),
+                 ("tip", "Tip", "mdi:lightbulb-on-outline", "amber", 12),
+                 ("gas", "Gas", "mdi:fire", "deep-orange", 18),
+                 ("power", "Electricity", "mdi:flash", "indigo", 18))
+        for key, title, icon, color, cols in cards:
             if ins.get(key):
-                story.append(insight_card(ins[key], title=label, icon=icon, color=color))
+                story.append(insight_card(ins[key], title=title, icon=icon, color=color, cols=cols))
         sections.append(section(story, span=3))
     chart = [heading("Last 48 hours", "mdi:chart-bar", tap=dash),
-             apex(usage_series(e), span="48h", start="hour", offset="-47h", height=260, cols=36)]
+             apex(usage_series(e), span="48h", start="hour", offset="-47h", height=240, cols=36,
+                  header={"show": False})]
     sections.append(section(chart, span=2))
     now = [heading("Right now", "mdi:gauge")]
     if e.get("graph"):
@@ -1382,15 +1445,146 @@ def energy_view(e):
     now += [tile_from(d, 6, color="green") for d in ents(e.get("devices"))]
     actions = []
     if ins.get("refresh"):
-        actions.append(tile(ins["refresh"], 6, name="Rewrite story", icon="mdi:creation", color="deep-purple",
+        actions.append(tile(ins["refresh"], 6, name="Rewrite story", icon="mdi:creation", color="amber",
                             hide_state=True, tap={"action": "perform-action", "perform_action": ins["refresh"]}))
     actions.append(tile(e["graph"], 6, name="Energy dashboard", icon="mdi:open-in-new", color="primary",
                         hide_state=True, tap=nav(dash)))
     sections.append(section(now + actions))
     sections.append(section([heading("Last 14 days", "mdi:calendar-month-outline", tap=dash),
-                             apex(usage_series(e, "day"), span="14d", start="day", offset="-13d",
-                                  height=220, cols=36)], span=3))
+                             apex(usage_series(e, "day", area=False), span="14d", start="day",
+                                  offset="-14d", height=200, cols=36, header={"show": False})], span=3))
     return {"title": "Energy", "path": "energy", "subview": True, "back_path": f"/{URL_PATH}/home",
+            "type": "sections", "max_columns": 3, "dense_section_placement": True, "sections": sections}
+
+
+# --------------------------------------------------------------------------------------
+# Media: the TV and the music, big and visual (Yet Another Media Player + Music Assistant)
+# --------------------------------------------------------------------------------------
+def media_path():
+    return f"/{URL_PATH}/media"
+
+
+MEDIA_STYLE = """
+ha-card { overflow: hidden; }
+"""
+
+YAMP_BARE = """
+.media-artwork-placeholder, .card-lower-fade, .card-lower-content-bg { display: none !important; }
+.entity-options-overlay, .entity-options-sheet { background: transparent !important; }
+"""
+
+# Shown when an app sends no artwork (YouTube, Netflix and live TV mostly don't): soft colour, like stage light.
+MEDIA_FALLBACK_ART = "data:image/svg+xml;utf8," + urllib.parse.quote(
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 800 500' preserveAspectRatio='xMidYMid slice'>"
+    "<defs>"
+    "<radialGradient id='a' cx='82%' cy='18%' r='60%'><stop offset='0' stop-color='#8b7cff' stop-opacity='.75'/>"
+    "<stop offset='1' stop-color='#8b7cff' stop-opacity='0'/></radialGradient>"
+    "<radialGradient id='b' cx='12%' cy='88%' r='65%'><stop offset='0' stop-color='#ff8a4c' stop-opacity='.6'/>"
+    "<stop offset='1' stop-color='#ff8a4c' stop-opacity='0'/></radialGradient>"
+    "<radialGradient id='c' cx='58%' cy='96%' r='45%'><stop offset='0' stop-color='#ff5fa2' stop-opacity='.45'/>"
+    "<stop offset='1' stop-color='#ff5fa2' stop-opacity='0'/></radialGradient>"
+    "</defs><rect width='800' height='500' fill='#15121f'/>"
+    "<rect width='800' height='500' fill='url(#a)'/><rect width='800' height='500' fill='url(#b)'/>"
+    "<rect width='800' height='500' fill='url(#c)'/></svg>")
+
+
+def media_on(m):
+    """Visibility: the TV is on, or one of the music players is playing."""
+    tv = m.get("tv") or {}
+    conds = [{"condition": "state", "entity": tv.get("power", tv.get("entity")), "state": "on"}] if tv else []
+    conds += [{"condition": "state", "entity": p["entity"], "state": "playing"} for p in ents(m.get("players"))]
+    return [{"condition": "or", "conditions": conds}]
+
+
+def yamp_entities(m, music=True, tv=True):
+    """The card's chips: the TV first (sound through the speakers it's synced to), then the music players."""
+    out = []
+    t = m.get("tv")
+    if tv and t:
+        out.append({k: v for k, v in {
+            "entity_id": t["entity"], "name": t.get("name", "TV"), "volume_entity": t.get("volume"),
+            "remote_entity": t.get("remote"), "hidden_controls": ["power", "shuffle", "repeat", "favorite"],
+        }.items() if v})
+    if music:
+        for pl in ents(m.get("players")):
+            out.append({"entity_id": pl["entity"], "name": pl.get("name"),
+                        "music_assistant_entity": pl.get("music_assistant", pl["entity"])})
+    return out
+
+
+def yamp_actions(m):
+    """App shortcuts on the TV's remote, live TV, the power button, and search for the music."""
+    t = m.get("tv") or {}
+    acts = []
+    if t.get("power"):
+        acts.append({"name": "Power", "icon": "mdi:power", "placement": "replace_power",
+                     "service": "media_player.toggle", "service_data": {"entity_id": t["power"]}})
+    for a in t.get("apps", []):
+        acts.append({"name": a["name"], "icon": a.get("icon", "mdi:application"),
+                     "service": "remote.turn_on",
+                     "service_data": {"entity_id": t["remote"], "activity": a["activity"]}})
+    lt = t.get("live_tv")
+    if lt:
+        acts.append({"name": "Live TV", "icon": "mdi:television-classic", "service": "media_player.select_source",
+                     "service_data": {"entity_id": lt["entity"], "source": lt.get("source", "Watch TV")}})
+    if m.get("players"):
+        acts.append({"name": "Music", "icon": "mdi:music-circle-outline", "menu_item": "search"})
+    return acts
+
+
+def yamp(entities, cols=24, height=380, actions=None, **extra):
+    c = {"type": "custom:yet-another-media-player", "entities": entities, "actions": actions or [],
+         "match_theme": True, "control_layout": "modern", "adaptive_controls": True,
+         "display_timestamps": True, "extend_artwork": True, "artwork_object_fit": "cover",
+         "artwork_position": "center center", "show_chip_row": "always", "card_height": height,
+         "idle_timeout_ms": 0, "dim_chips_on_idle": False, "default_search_filter": "radio",
+         "default_search_favorites": True, "search_view": "card", "search_card_columns": 4,
+         "volume_mode": "slider", "_style": "plain", "card_mod": {"style": GLASS + MEDIA_STYLE},
+         "media_artwork_overrides": [{"missing_art_url": MEDIA_FALLBACK_ART}], "idle_image": MEDIA_FALLBACK_ART,
+         **grid(cols, rows="auto")}
+    if extra.get("card_type") == "remote_control" or extra.get("template") == "dedicated_search":
+        # Pure controls: no artwork placeholder or fade behind the pad and the list.
+        c.update(artwork_object_fit="no_artwork", show_chip_row="auto", disable_artwork_gradient=True)
+        c.pop("media_artwork_overrides"); c.pop("idle_image")
+        c["card_mod"] = {"style": GLASS + MEDIA_STYLE + YAMP_BARE}
+    c.update(extra)
+    return c
+
+
+def media_hero(m, cols=24):
+    """The home page's 'now playing': the TV big, with a remote beside it, shown while something's on."""
+    cards = [heading("Now playing", "mdi:play-circle-outline", tap=media_path()),
+             yamp(yamp_entities(m), cols=24, height=400, actions=yamp_actions(m))]
+    t = m.get("tv") or {}
+    if t.get("remote"):
+        cards.append(yamp(yamp_entities(m, music=False), cols=12, height=400, card_type="remote_control"))
+    return cards
+
+
+def media_view(m):
+    """Media page: the TV (picture, controls, apps, remote) and the music (Music Assistant favourites,
+    search, and grouping the speakers into one)."""
+    t = m.get("tv") or {}
+    sections = []
+    if t:
+        tv = [heading(t.get("name", "TV"), "mdi:television"),
+              yamp(yamp_entities(m, music=False), cols=36, height=420, actions=yamp_actions(m))]
+        sections.append(section(tv, span=2))
+        if t.get("remote"):
+            sections.append(section([heading("Remote", "mdi:remote-tv"),
+                                     yamp(yamp_entities(m, music=False), cols=12, height=420,
+                                          card_type="remote_control")]))
+    if m.get("players"):
+        music = [heading("Music", "mdi:music-circle-outline"),
+                 yamp(yamp_entities(m, tv=False), cols=36, height=420,
+                      actions=[{"name": "Search", "icon": "mdi:magnify", "menu_item": "search"},
+                               {"name": "Recently played", "icon": "mdi:history",
+                                "menu_item": "search-recently-played"}])]
+        sections.append(section(music, span=2))
+        first = yamp_entities(m, tv=False)[:1]
+        sections.append(section([heading("Favourites", "mdi:heart-outline"),
+                                 yamp(first, cols=12, height=420, template="dedicated_search", search_view="list")]))
+    return {"title": m.get("title", "Media"), "path": "media", "subview": True, "back_path": f"/{URL_PATH}/home",
             "type": "sections", "max_columns": 3, "dense_section_placement": True, "sections": sections}
 
 
@@ -1726,7 +1920,11 @@ def room_view(area_id, r, floor):
 
     # Media
     media = split(r.get("media"))
-    if media:
+    m = CFG.get("media")
+    if m and m.get("room") == area_id:
+        sections.append(section([heading("Media", "mdi:play-box-multiple", tap=media_path()),
+                                 yamp(yamp_entities(m), cols=12, height=340, actions=yamp_actions(m))]))
+    elif media:
         cards = [heading("Media", "mdi:play-box-multiple")]
         for m in media:
             is_tv = STATES[m["entity"]]["attributes"].get("device_class") == "tv"
@@ -1927,6 +2125,8 @@ def main():
     if vac:
         vacuum_maps(call, vac)
         views.append(vacuum_view(vac))
+    if CFG.get("media"):
+        views.append(media_view(CFG["media"]))
     if CFG.get("birdnet"):
         views.append(birds_view(CFG["birdnet"]))
         room = next((v for v in views if v["path"] == ROOMS.get(CFG["birdnet"].get("room"), {}).get("path")), None)

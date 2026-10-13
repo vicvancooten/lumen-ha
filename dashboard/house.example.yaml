@@ -40,7 +40,8 @@ quick_settings:              # 3×3 grid of tiles on the home page
      action: {action: navigate, navigation_path: /home-dashboard/vacuum}}   # any tap action works
   # - {entity: script.good_night, name: Good night, icon: mdi:power-sleep, color: indigo, action: script,
   #    confirm: "Turn everything off?"}                                     # runs a script, optionally asks first
-  - {entity: media_player.whole_house, name: Music, icon: mdi:speaker-multiple, color: pink}
+  - {entity: media_player.living_room_speakers, name: Music, icon: mdi:music-circle-outline, color: pink,
+     action: {action: navigate, navigation_path: /home-dashboard/media}}
   - {entity: todo.shopping_list, name: Groceries, icon: mdi:cart-outline, color: cyan, action: todo}
 
 # night_mode: input_boolean.night_mode   # optional: the greeting says when it's on
@@ -52,10 +53,15 @@ energy:                      # optional; the heading and power graph open the En
   gas: sensor.gas_consumption            # optional: gas meter; with `graph`, an hour-by-hour chart (apexcharts-card)
   gas_flow: sensor.gas_flow_rate         # optional: a Derivative helper of the gas meter, in m³/h
   baseload: sensor.electricity_baseload  # optional: a Statistics helper, the 24 h minimum of `graph`
+  today: {electricity: sensor.electricity_today, gas: sensor.gas_today}   # optional: daily Utility Meter
+                                         # helpers; today's totals sit large above the hour-by-hour chart
   insight:                               # optional: an AI-written story of the day, and an Energy page
     headline: input_text.energy_insight_headline   # written by a script of your own (e.g. ai_task.generate_data)
+    rating: input_text.energy_insight_rating       # optional: good / usual / high; sets the icon and colour
+    verdict: input_text.energy_insight_verdict     # optional: good or not, and why (vs. your own average)
     gas: input_text.energy_insight_gas
     power: input_text.energy_insight_power
+    waste: input_text.energy_insight_waste         # optional: where energy was wasted
     tip: input_text.energy_insight_tip
     refresh: script.energy_insight_refresh         # "Rewrite story" button
   devices:                               # optional: measured consumers on the Energy page
@@ -63,6 +69,24 @@ energy:                      # optional; the heading and power graph open the En
   badges:
     - {entity: sensor.electricity_tariff, icon: mdi:clock-outline}
     - {entity: sensor.co2_intensity, icon: mdi:leaf, color: green}
+
+media:                       # optional: the TV and the music, big and visual: "Now playing" on the home page
+                             # while something's on, a Media page, and the player on the room's page.
+                             # Needs the yet-another-media-player card (HACS); music via Music Assistant.
+  room: living_room          # the room page that gets the big player
+  tv:
+    name: TV
+    entity: media_player.living_room_tv       # what's playing: title, artwork, play/pause (e.g. Google Cast)
+    power: media_player.living_room_tv_remote # optional: power button (e.g. Android TV Remote)
+    remote: remote.living_room_tv             # optional: remote pad, app shortcuts
+    volume: media_player.soundbar             # optional: when the TV's sound goes through other speakers
+    live_tv: {entity: media_player.tv, source: Watch TV}   # optional: a Live TV shortcut
+    apps:                                     # optional: app shortcuts (remote.turn_on activity)
+      - {name: YouTube, icon: mdi:youtube, activity: https://www.youtube.com}
+      - {name: Netflix, icon: mdi:netflix, activity: https://www.netflix.com/title}
+  players:                   # music players (Music Assistant entities: search, favourites, radio)
+    - {entity: media_player.living_room_speakers, name: Living room}
+    - {entity: media_player.bedroom_speakers, name: Bedroom}
 
 birdnet:                     # optional: BirdNET-Go on the home page + a Birds page (sensors: ../ha/birdnet_go.yaml)
   title: Outside             # heading of the home-page block
