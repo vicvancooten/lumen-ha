@@ -1013,17 +1013,24 @@ def birdnet_cards(b):
 
 BIRD_HERO_STYLE = """
 ha-card {
-  position: relative; overflow: hidden; border-radius: 28px !important; border: none !important;
-  background: #14161c !important; height: 100%; box-sizing: border-box; display: flex; align-items: flex-end;
-  backdrop-filter: none !important; -webkit-backdrop-filter: none !important;
+  position: relative; border: none !important; border-radius: 0 !important; box-shadow: none !important;
+  background: none !important; height: 100%; box-sizing: border-box; display: flex; align-items: flex-end;
+  backdrop-filter: none !important; -webkit-backdrop-filter: none !important; overflow: visible !important;
   --hero-pad: clamp(14px, 2.5vw, 36px); --hero-photo: clamp(104px, 26%, 320px);
 }
-/* A blurred, darkened copy of the photo across the card, the sharp one framed on top (the source is 320x240). */
+/* Full bleed like the room pages: the latest bird's photo pinned behind the whole page, softened (the source
+   is only 320x240) and fading into the page colour, so the cards below scroll over it. A view background
+   can't change with the bird, so the hero card draws it. */
 ha-card::before {
-  content: ""; position: absolute; inset: -40px; pointer-events: none;
-  background: url("{{ state_attr('@PHOTO@', 'entity_picture') }}") center / cover;
-  filter: blur(28px) saturate(1.35) brightness(.6);
+  content: ""; position: fixed; z-index: -1; top: 0; left: 0; right: 0; height: clamp(62vh, 78vh, 88vh);
+  pointer-events: none; transform: scale(1.25); transform-origin: 50% 0;
+  background: radial-gradient(120% 70% at 0% 0%, color-mix(in srgb, var(--primary-color) 24%, transparent), transparent 70%),
+              url("{{ state_attr('@PHOTO@', 'entity_picture') }}") center / cover;
+  filter: blur(36px) saturate(1.4) brightness(.68);
+  -webkit-mask-image: linear-gradient(to bottom, #000 28%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 28%, transparent 100%);
 }
+/* The sharp photo, framed. */
 ha-card::after {
   content: ""; position: absolute; left: var(--hero-pad); bottom: var(--hero-pad); width: var(--hero-photo);
   aspect-ratio: 4 / 3; border-radius: 22px; pointer-events: none;
