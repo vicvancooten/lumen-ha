@@ -218,6 +218,9 @@ def room_card(area_id, room, cols=12, rows=None, navigate=True, banner=False, as
         aspect = "7/2"
     if aspect:
         c["styles"]["card"].update({"--user-grid-aspect-ratio": aspect, "aspect-ratio": aspect})
+    elif rows:
+        # A fixed grid height (the home page mosaic): let the card fill it instead of staying square.
+        c["styles"]["card"].update({"--user-grid-aspect-ratio": "auto", "height": "100%"})
     style = [] if banner else [ROOM_HOVER_STYLE]
     hero = banner and room.get("picture")
     if hero:
@@ -257,19 +260,19 @@ def room_card(area_id, room, cols=12, rows=None, navigate=True, banner=False, as
 EASE = "cubic-bezier(.2, .8, .2, 1)"
 GLASS = """
 ha-card {
-  background: color-mix(in srgb, var(--card-background-color) 72%, transparent) !important;
+  background: color-mix(in srgb, var(--card-background-color) var(--lumen-glass, 72%), transparent) !important;
   backdrop-filter: blur(18px) saturate(140%);
   -webkit-backdrop-filter: blur(18px) saturate(140%);
-  border: 1px solid color-mix(in srgb, var(--primary-text-color) 9%, transparent) !important;
+  border: 1px solid var(--lumen-card-border, color-mix(in srgb, var(--primary-text-color) 9%, transparent)) !important;
   border-radius: 28px !important;
-  box-shadow: 0 10px 30px -12px rgba(0, 0, 0, .35) !important;
+  box-shadow: var(--lumen-card-shadow, 0 10px 30px -12px rgba(0, 0, 0, .35)) !important;
   transition: translate .35s EASE, box-shadow .35s EASE, border-color .35s EASE;
 }
 @media (hover: hover) {
   ha-card:hover {
     translate: 0 -2px;
-    border-color: color-mix(in srgb, var(--primary-text-color) 16%, transparent) !important;
-    box-shadow: 0 22px 44px -18px rgba(0, 0, 0, .5) !important;
+    border-color: var(--lumen-card-border-hover, color-mix(in srgb, var(--primary-text-color) 16%, transparent)) !important;
+    box-shadow: var(--lumen-card-shadow-hover, 0 22px 44px -18px rgba(0, 0, 0, .5)) !important;
   }
 }
 @media (prefers-reduced-motion: reduce) { ha-card, ha-card:hover { transition: none; translate: none; } }
@@ -279,6 +282,15 @@ ha-card {
 PHOTO_BASE = "#15171c"
 ROOM_HOVER_STYLE = """
 ha-card { transition: translate .4s EASE, scale .2s EASE, box-shadow .4s EASE !important; }
+/* The card's own inset is a percentage, which puts the name almost on the edge of small cards. */
+.info { margin: 18px 0 0 20px !important; width: calc(100% - 20px) !important; }
+/* The toggles grow with the card's height; cap them so big cards don't get balloon-sized icons. */
+entity-collection {
+  aspect-ratio: auto !important; width: 62px !important; height: 100% !important;
+  grid-template-rows: repeat(var(--user-entities-wrap, 4), minmax(0, 52px)) !important;
+  align-content: start; padding: 12px 12px 12px 0 !important;
+}
+.problems { margin: 0 0 16px 18px !important; }
 room-background-image { position: absolute; inset: 0; transition: scale .9s EASE; }
 @media (hover: hover) {
   ha-card:hover { translate: 0 -3px; box-shadow: 0 26px 48px -20px rgba(0, 0, 0, .6) !important; }
@@ -365,8 +377,8 @@ NAVBAR_STYLES = """
   background: color-mix(in srgb, var(--card-background-color) 70%, transparent) !important;
   backdrop-filter: blur(22px) saturate(160%);
   -webkit-backdrop-filter: blur(22px) saturate(160%);
-  border: 1px solid color-mix(in srgb, var(--primary-text-color) 9%, transparent) !important;
-  box-shadow: 0 18px 40px -16px rgba(0, 0, 0, .45) !important;
+  border: 1px solid var(--lumen-card-border, color-mix(in srgb, var(--primary-text-color) 9%, transparent)) !important;
+  box-shadow: var(--lumen-bar-shadow, 0 18px 40px -16px rgba(0, 0, 0, .45)) !important;
 }
 """
 
@@ -394,8 +406,8 @@ HEADER_STYLES = """
   background: color-mix(in srgb, var(--card-background-color) 70%, transparent) !important;
   backdrop-filter: blur(22px) saturate(160%);
   -webkit-backdrop-filter: blur(22px) saturate(160%);
-  border: 1px solid color-mix(in srgb, var(--primary-text-color) 9%, transparent) !important;
-  box-shadow: 0 12px 30px -16px rgba(0, 0, 0, .45) !important;
+  border: 1px solid var(--lumen-card-border, color-mix(in srgb, var(--primary-text-color) 9%, transparent)) !important;
+  box-shadow: var(--lumen-bar-shadow, 0 18px 40px -16px rgba(0, 0, 0, .45)) !important;
 }
 .navbar-card::before {
   content: var(--page-title);
@@ -408,6 +420,13 @@ HEADER_STYLES = """
 .route.back { order: 0; margin-left: -10px; }
 .route .button { padding: 6px 10px !important; }
 """
+
+
+SPACING = {
+    "--ha-section-grid-row-gap": "12px", "--ha-section-grid-column-gap": "12px",
+    "--ha-view-sections-row-gap": "40px", "--ha-view-sections-column-gap": "36px",
+    "--ha-view-sections-narrow-column-gap": "14px",
+}
 
 
 def full_load(icon, label, url):
@@ -463,6 +482,8 @@ if (!window.__lumenEnter?.isConnected) {
   if (container) {
     window.__lumenEnter = container;
     document.documentElement.style.setProperty('--lumen-rise', 'none');
+    // More air than HA's defaults, scoped to this dashboard's views.
+    for (const [k, v] of Object.entries(%s)) container.style.setProperty(k, v);
     const heroes = %s;
     const reduce = matchMedia('(prefers-reduced-motion: reduce)');
     const style = document.createElement('style');
@@ -528,31 +549,47 @@ def navbar():
     def selected(paths):
         return "[[[ return " + json.dumps(paths) + ".includes(window.location.pathname) ]]]"
 
-    # Tab index per page (rooms map to their floor's tab), used by the sliding indicator.
-    tabs = {f"/{URL_PATH}/home": 0, f"/{URL_PATH}/birds": 0}
-    for i, f in enumerate(FLOORS, start=1):
+    # Tab index per page (rooms map to their floor's tab), used by the sliding indicator. Floors with
+    # `nav: false` move to the More menu; `nav_tabs` adds tabs for other pages (e.g. Outside).
+    home_pages = [f"/{URL_PATH}/{p}" for p in ("home", "energy", "vacuum")]
+    tabs = {p: 0 for p in home_pages}
+    shown = [f for f in FLOORS if f.get("nav", True)]
+    hidden = [f for f in FLOORS if not f.get("nav", True)]
+    extra = CFG.get("nav_tabs") or []
+    for i, f in enumerate(shown, start=1):
         tabs[f"/{URL_PATH}/{f['path']}"] = i
         tabs.update({f"/{URL_PATH}/{r['path']}": i for r in ROOMS.values() if r["floor"] == f["id"]})
+    for i, t in enumerate(extra, start=len(shown) + 1):
+        tabs.update({f"/{URL_PATH}/{p}": i for p in [t["path"]] + t.get("also", [])})
+    if not any(birds_path() in [f"/{URL_PATH}/{p}" for p in [t["path"]] + t.get("also", [])] for t in extra):
+        tabs[birds_path()] = 0
+        home_pages.append(birds_path())
     haunted = [a for a, r in ROOMS.items() if r.get("haunt")]
     haunt_js = HAUNT_JS % (json.dumps(haunted), float(CFG["haunted"].get("every", 100)),
                            float(CFG["haunted"].get("duration", 1))) if haunted else ""
     heroes = [f"/{URL_PATH}/{r['path']}" for r in ROOMS.values() if r.get("picture")]
-    home_selected = ("[[[ " + NAV_MOTION_JS % json.dumps(tabs) + ENTER_JS % json.dumps(heroes) + haunt_js +
+    home_selected = ("[[[ " + NAV_MOTION_JS % json.dumps(tabs) + ENTER_JS % (json.dumps(SPACING), json.dumps(heroes)) + haunt_js +
                      (INGRESS_JS if CFG.get("birdnet", {}).get("saezuri_app") else "") +
-                     f"return {json.dumps([f'/{URL_PATH}/home', birds_path()])}.includes(window.location.pathname); ]]]")
+                     f"return {json.dumps(home_pages)}.includes(window.location.pathname); ]]]")
     routes = [{"url": f"/{URL_PATH}/home", "icon": "mdi:home-outline", "icon_selected": "mdi:home",
                "label": "Home", "selected": home_selected}]
-    for f in FLOORS:
+    for f in shown:
         rooms = [r["path"] for r in ROOMS.values() if r["floor"] == f["id"]]
         routes.append({
             "url": f"/{URL_PATH}/{f['path']}", "icon": f["icon"], "label": f.get("short", f["name"]),
             "selected": selected([f"/{URL_PATH}/{p}" for p in [f["path"]] + rooms]),
         })
+    for t in extra:
+        routes.append({"url": f"/{URL_PATH}/{t['path']}", "icon": t.get("icon", "mdi:compass-outline"),
+                       "label": t.get("label", t["path"].title()),
+                       "selected": selected([f"/{URL_PATH}/{p}" for p in [t["path"]] + t.get("also", [])])})
+    more_floors = [{"icon": f["icon"], "label": f["name"], "url": f"/{URL_PATH}/{f['path']}"} for f in hidden]
     routes.append({
         "icon": "mdi:dots-horizontal", "label": "More", "tap_action": {"action": "open-popup"},
         "popup": [
+            *more_floors,
+            {"icon": "mdi:lightning-bolt-outline", "label": "Energy", "url": energy_path() if CFG.get("energy", {}).get("insight") else "/energy"},
             full_load("mdi:pencil-outline", "Edit dashboard", f"/{URL_PATH}/home?disable_km&edit=1"),
-            {"icon": "mdi:lightning-bolt-outline", "label": "Energy", "url": "/energy"},
             {"icon": "mdi:chart-box-outline", "label": "History", "url": "/history"},
             {"icon": "mdi:map-outline", "label": "Map", "url": "/map"},
             full_load("mdi:cog-outline", "Settings", "/config/dashboard"),
@@ -777,6 +814,38 @@ def haunt(call, areas, dry_run):
 # --------------------------------------------------------------------------------------
 # Views
 # --------------------------------------------------------------------------------------
+def fill_row(k, width):
+    """Widths (multiples of 6 columns) for k cards sharing a row of `width` columns."""
+    base = max(6, width // k // 6 * 6)
+    widths = [base] * k
+    i = k - 1
+    while sum(widths) < width:
+        widths[i] += 6
+        i = i - 1 if i > 0 else k - 1
+    return widths
+
+
+def bento(n):
+    """(columns, rows) per room for a floor on the home page: the first room large, the rest in a tidy
+    mosaic beside and below it, widened where needed so every row ends flush."""
+    if n == 0:
+        return []
+    if n == 1:
+        return [(36, 3)]
+    rest = n - 1
+    if rest <= 4:
+        return [(12, 3)] + [(w, 3) for w in fill_row(rest, 24)]
+    beside = rest if rest <= 8 else 8
+    top = [(w, 3) for w in fill_row(4, 24)] + [(w, 3) for w in fill_row(beside - 4, 24)]
+    below = []
+    left = rest - beside
+    while left:
+        k = min(6, left)
+        below += [(w, 3) for w in fill_row(k, 36)]
+        left -= k
+    return [(12, 6)] + top + below
+
+
 def home_view(areas_by_floor):
     user = CFG.get("user_name")
     greeting = ("{% set h = now().hour %}"
@@ -785,7 +854,9 @@ def home_view(areas_by_floor):
     welcome = [{
         "type": "custom:mushroom-title-card",
         "title": greeting,
-        "subtitle": "{{ now().strftime('%A %-d %B') }} · " + plural_lights(all_lights()),
+        "subtitle": ("{{ now().strftime('%A %-d %B') }} · " + plural_lights(all_lights()) +
+                     (f"{{{{ ' · 🌙 Night mode' if is_state('{CFG['night_mode']}', 'on') else '' }}}}"
+                      if CFG.get("night_mode") else "")),
         **grid(12),
     }]
 
@@ -823,6 +894,10 @@ def home_view(areas_by_floor):
         action = q.get("action")
         if action == "scene":
             kw.update(tap=scene_tap(q["entity"]), hide_state=True)
+        elif action == "script":
+            kw.update(hide_state=True, tap={"action": "perform-action", "perform_action": "script.turn_on",
+                                            "target": {"entity_id": q["entity"]},
+                                            **({"confirmation": {"text": q["confirm"]}} if q.get("confirm") else {})})
         elif action == "todo":
             kw["tap"] = nav(f"/todo?entity_id={q['entity']}")
         elif isinstance(action, dict):
@@ -833,17 +908,7 @@ def home_view(areas_by_floor):
 
     energy = CFG.get("energy")
     if energy:
-        cards = [heading("Energy", "mdi:lightning-bolt",
-                         badges=[badge(b["entity"], b.get("color"), icon=b.get("icon"))
-                                 for b in ents(energy.get("badges"))])]
-        if energy.get("graph"):
-            cards.append(mini_graph(
-                [(energy["graph"], "Power", "#f7b731")], name="Power today", hours=24, height=140,
-                show={"fill": "fade", "labels": False, "legend": False, "extrema": True, "icon": False},
-                color_thresholds=[{"value": 0, "color": "#20bf6b"}, {"value": 0.8, "color": "#f7b731"},
-                                  {"value": 2, "color": "#eb3b5a"}]))
-        cards += [tile_from(t, 6) for t in energy.get("tiles", [])]
-        sections.append(section(cards))
+        sections.append(section(energy_cards(energy)))
 
     if CFG.get("birdnet"):
         sections.append(section(birdnet_cards(CFG["birdnet"]), span=3))
@@ -851,7 +916,7 @@ def home_view(areas_by_floor):
     for f in FLOORS:
         rooms = [a for a in areas_by_floor[f["id"]] if a in ROOMS]
         cards = [heading(f["name"], f["icon"], tap=f"/{URL_PATH}/{f['path']}")]
-        cards += [room_card(a, ROOMS[a], cols=6) for a in rooms]
+        cards += [room_card(a, ROOMS[a], cols=c, rows=h) for a, (c, h) in zip(rooms, bento(len(rooms)))]
         sections.append(section(cards, span=3))
 
     return {"title": "Home", "path": "home", "icon": "mdi:home-heart", "type": "sections",
@@ -886,37 +951,91 @@ def bird_card(b, tap=None, **extra):
 CLEAR_PIXEL = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
 
 
-def camera_card(camera, name, live=True, bird=None, visibility=None, cols=24, tap_entity=None, since=None):
-    """A camera with name and Live chips over it, an expand button and, optionally, a bird card pinned below.
-    Everything over the picture opens the live view: the chips, the expand button and the picture itself.
-    A snapshot (`live=False`) opens `tap_entity`, the live camera, and says so ("Tap for live")."""
-    def pinned(card, **edges):
-        # picture-elements positions an element from its centre; pin to the edges instead.
-        return {**card, "style": {"top": "auto", "bottom": "auto", "left": "auto", "right": "auto",
-                                  "transform": "none", **edges}}
+CAMERA_STYLE = """
+ha-card {
+  position: relative; border-radius: 28px !important; overflow: hidden; background: #15171c !important;
+  border: 1px solid color-mix(in srgb, var(--primary-text-color) 9%, transparent) !important;
+  box-shadow: 0 18px 40px -18px rgba(0, 0, 0, .55) !important;
+  transition: translate .4s EASE, box-shadow .4s EASE, border-color .4s EASE, scale .2s EASE;
+}
+hui-image { transition: scale .9s EASE; }
+@media (hover: hover) {
+  ha-card:hover { translate: 0 -3px; box-shadow: 0 26px 48px -20px rgba(0, 0, 0, .6) !important; }
+  ha-card:hover hui-image { scale: 1.03; }
+  ha-card:hover::before { opacity: 1; translate: 0 0; }
+}
+ha-card:active { scale: .99; }
+/* The camera name over a soft top and bottom shade. */
+ha-card::after {
+  content: @NAME@; position: absolute; inset: 0; z-index: 1; pointer-events: none;
+  padding: 18px 22px; box-sizing: border-box;
+  color: #fff; font-size: 20px; font-weight: 650; letter-spacing: -.01em; line-height: 1.15;
+  text-shadow: 0 1px 10px rgba(0, 0, 0, .6);
+  background: linear-gradient(to bottom, rgba(0, 0, 0, .55), transparent 34%),
+              linear-gradient(to top, rgba(0, 0, 0, .35), transparent 28%);
+}
+/* State pill, top right: a pulsing red dot while live, a quiet one on a snapshot. */
+hui-image::after {
+  content: @PILL@; position: absolute; z-index: 2; top: 18px; right: 18px;
+  padding: 5px 11px 5px 24px; border-radius: 999px; pointer-events: none;
+  font-size: 12px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; color: #fff;
+  background: radial-gradient(circle at 13px 50%, @DOT@ 3.5px, transparent 4.5px), rgba(0, 0, 0, .38);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); @PULSE@
+}
+/* On hover, a small "open" hint appears bottom right. */
+ha-card::before {
+  content: "Open  ⤢"; position: absolute; z-index: 2; right: 18px; bottom: @HINT_BOTTOM@; pointer-events: none;
+  padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; color: #fff;
+  background: rgba(0, 0, 0, .38); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  opacity: 0; translate: 0 6px; transition: opacity .3s EASE, translate .3s EASE;
+}
+@keyframes lumen-live { 50% { opacity: .72; } }
+@media (prefers-reduced-motion: reduce) {
+  hui-image::after { animation: none; } ha-card, hui-image, ha-card::before { transition: none; }
+  ha-card:hover, ha-card:hover hui-image, ha-card:active { translate: none; scale: none; }
+}
+""".replace("EASE", EASE)
+DETECTED_STYLE = ("ha-card { border-color: #34d399 !important; "
+                  "box-shadow: 0 0 0 2px #34d399, 0 18px 44px -16px rgba(52, 211, 153, .45) !important; }")
+
+
+def camera_card(camera, name, live=True, bird=None, visibility=None, cols=24, tap_entity=None, since=None,
+                detect=None):
+    """A camera like the Cameras page draws it: its name over a soft shade, a Live pill (or, for a snapshot,
+    when it was taken and "Tap for live"), a lift and slow zoom on hover, and a green ring while `detect`
+    sensors see someone. Tapping anywhere opens the live view (`tap_entity` for a snapshot). A bird card
+    can be pinned to the bottom."""
     more = {"action": "more-info", "entity": tap_entity or camera}
-    chips = [{"type": "template", "icon": "mdi:cctv", "content": name, "tap_action": more}]
     if live:
-        chips.append({"type": "template", "icon": "mdi:circle", "icon_color": "red", "content": "Live", "tap_action": more})
+        pill, dot, pulse = '"Live"', "#ff5a5f", "animation: lumen-live 2s ease-in-out infinite;"
     else:
-        if since:
-            chips.append({"type": "template", "icon": "mdi:history", "tap_action": more, "content": (
-                f"{{% set t = state_attr('{since}', 'last_triggered') %}}"
-                "{{ 'Last visitor · ' ~ relative_time(t) ~ ' ago' if t else 'Last snapshot' }}")})
-        chips.append({"type": "template", "icon": "mdi:circle", "icon_color": "grey", "content": "Tap for live",
-                      "tap_action": more})
-    elements = [
-        {"type": "image", "image": CLEAR_PIXEL, "entity": tap_entity or camera, "tap_action": more,
-         "style": {"top": "0", "left": "0", "width": "100%", "height": "100%", "transform": "none"}},
-        pinned({"type": "custom:mushroom-chips-card", "alignment": "start", "chips": chips}, top="12px", left="12px"),
-        {"type": "icon", "icon": "mdi:arrow-expand", "entity": tap_entity or camera, "tap_action": more,
-         "style": {"top": "26px", "right": "26px", "color": "#fff", "--mdc-icon-size": "26px",
-                   "filter": "drop-shadow(0 1px 4px rgba(0,0,0,.6))"}},
-    ]
+        # card-mod renders the template, so the pill can say how old the snapshot is.
+        pill = ((f"\"{{% set t = state_attr('{since}', 'last_triggered') %}}"
+                 "{{ relative_time(t) ~ ' ago · ' if t else '' }}Tap for live\"") if since else '"Tap for live"')
+        dot, pulse = "rgba(255,255,255,.6)", ""
+    style = (CAMERA_STYLE.replace("@NAME@", json.dumps(name)).replace("@PILL@", pill).replace("@DOT@", dot)
+             .replace("@PULSE@", pulse).replace("@HINT_BOTTOM@", "88px" if bird else "18px"))
+    if detect:
+        cond = " or ".join(f"is_state('{e}', 'on')" for e in detect)
+        style += f"{{% if {cond} %}}\n{DETECTED_STYLE}\n{{% endif %}}\n"
+    if not bird:
+        # Without an overlay a picture-entity does the job, and it can crop the stream to fill the frame.
+        card = {"type": "picture-entity", "entity": camera, "camera_image": camera,
+                "camera_view": "live" if live else "auto", "show_name": False, "show_state": False,
+                "fit_mode": "cover", "aspect_ratio": "16:9", "tap_action": more, "_style": "plain",
+                "card_mod": {"style": style}, **grid(cols)}
+        if visibility:
+            card["visibility"] = visibility
+        return card
+    elements = [{"type": "image", "image": CLEAR_PIXEL, "entity": tap_entity or camera, "tap_action": more,
+                 "style": {"top": "0", "left": "0", "width": "100%", "height": "100%", "transform": "none"}}]
     if bird:
-        elements.append(pinned(bird, bottom="12px", left="12px", right="12px"))
+        # picture-elements positions an element from its centre; pin it to the edges instead.
+        elements.append({**bird, "style": {"top": "auto", "left": "14px", "right": "14px", "bottom": "14px",
+                                           "transform": "none"}})
     card = {"type": "picture-elements", "camera_image": camera, "camera_view": "live" if live else "auto",
-            "aspect_ratio": "16:9", "elements": elements, **grid(cols)}
+            "aspect_ratio": "16:9", "elements": elements, "_style": "plain", "card_mod": {"style": style},
+            **grid(cols)}
     if visibility:
         card["visibility"] = visibility
     return card
@@ -925,16 +1044,16 @@ def camera_card(camera, name, live=True, bird=None, visibility=None, cols=24, ta
 def door_cameras(d, cols):
     """The front door: live while the doorbell is wired or active; otherwise the last visitor's snapshot,
     which opens the live view when tapped (the doorbell is a battery camera that only streams on demand)."""
-    wired, timer = d.get("wired"), d.get("timer")
-    name = d.get("name", "Front door")
-    if not (d.get("idle") and (wired or timer)):
-        return [camera_card(d["live"], name, cols=cols)]
-    live_if = [{"condition": "or", "conditions": (
-        ([{"condition": "state", "entity": wired, "state": "on"}] if wired else []) +
-        ([{"condition": "state", "entity": timer, "state": "active"}] if timer else []))}]
-    idle_if = ([{"condition": "state", "entity": wired, "state_not": "on"}] if wired else []) + \
-              ([{"condition": "state", "entity": timer, "state_not": "active"}] if timer else [])
-    return [camera_card(d["live"], name, visibility=live_if, cols=cols),
+    # Live while any of these hold: wired (always streams), recent activity, or the camera is awake anyway
+    # (`asleep` is the battery camera's sleep sensor; off means it's streaming).
+    live = [(d.get("wired"), "on"), (d.get("timer"), "active"), (d.get("asleep"), "off")]
+    live = [(e, s) for e, s in live if e]
+    name, detect = d.get("name", "Front door"), d.get("detect")
+    if not (d.get("idle") and live):
+        return [camera_card(d["live"], name, cols=cols, detect=detect)]
+    live_if = [{"condition": "or", "conditions": [{"condition": "state", "entity": e, "state": s} for e, s in live]}]
+    idle_if = [{"condition": "state", "entity": e, "state_not": s} for e, s in live]
+    return [camera_card(d["live"], name, visibility=live_if, cols=cols, detect=detect),
             camera_card(d["idle"], name, live=False, visibility=idle_if, cols=cols,
                         tap_entity=d["live"], since=d.get("activity"))]
 
@@ -992,7 +1111,8 @@ def birdnet_cards(b):
     for t in extra:
         t.pop("grid_options", None)
     if camera and door:
-        cards.append(camera_card(camera, b.get("camera_name", "Garden"), bird=bird_card(b, tap=go), cols=18))
+        cards.append(camera_card(camera, b.get("camera_name", "Garden"), bird=bird_card(b, tap=go), cols=18,
+                                 detect=b.get("camera_detect")))
         cards += door_cameras(door, 18)
         cards += bird_summary_tile(b, 12, go)
         if extra:
@@ -1125,6 +1245,387 @@ def resolve_saezuri(call, b):
         print(f"WARNING: could not look up the Saezuri app {app!r} ({e}); the Birds page has no collage")
 
 
+# --------------------------------------------------------------------------------------
+# Energy: when it was used and what drove it
+# --------------------------------------------------------------------------------------
+ELECTRIC_COLOR, GAS_COLOR = "#8b7cff", "#ff8a4c"
+
+
+def energy_path():
+    return f"/{URL_PATH}/energy"
+
+
+def apex(series, title=None, span="24h", start="day", height=170, offset=None, cols=12, **extra):
+    """apexcharts-card with Lumen's quiet chart styling: no toolbar, faint grid, rounded columns."""
+    c = {
+        "type": "custom:apexcharts-card",
+        "graph_span": span,
+        "header": {"show": bool(title), "title": title or "", "show_states": False},
+        "series": series,
+        "yaxis": [{"id": "kwh", "show": False, "min": 0}, {"id": "gas", "show": False, "min": 0, "opposite": True}],
+        "apex_config": {
+            "chart": {"height": height, "toolbar": {"show": False}, "zoom": {"enabled": False},
+                      "fontFamily": "inherit", "background": "transparent"},
+            "grid": {"borderColor": "rgba(127,127,127,.14)", "strokeDashArray": 3,
+                     "padding": {"left": 4, "right": 4, "top": -8}},
+            "plotOptions": {"bar": {"borderRadius": 4, "columnWidth": "72%"}},
+            "dataLabels": {"enabled": False},
+            "legend": {"show": True, "position": "top", "horizontalAlign": "right", "fontSize": "12px",
+                       "markers": {"size": 5, "shape": "circle"}, "itemMargin": {"horizontal": 6}},
+            "xaxis": {"labels": {"style": {"fontSize": "11px"}, "datetimeUTC": False,
+                                 "format": "HH:mm" if span.endswith("h") else "d MMM"},
+                      "axisBorder": {"show": False}, "axisTicks": {"show": False}},
+            "tooltip": {"shared": True, "x": {"format": "HH:mm" if span.endswith("h") else "ddd d MMM"}},
+        },
+        **grid(cols),
+    }
+    if start:
+        c["span"] = {"start": start, **({"offset": offset} if offset else {})}
+    c.update(extra)
+    return c
+
+
+def usage_series(e, period="hour"):
+    """Electricity per period from the power sensor's mean (a kW mean over an hour is that hour's kWh),
+    gas per period from the meter's change."""
+    kw = 1 if e.get("power_unit", "kW") == "kW" else 0.001
+    factor = kw * (24 if period == "day" else 1)
+    return [
+        {"entity": e["graph"], "name": "Electricity", "type": "column", "yaxis_id": "kwh", "color": ELECTRIC_COLOR,
+         "unit": " kWh", "float_precision": 2, "transform": f"return x * {factor};",
+         "statistics": {"type": "mean", "period": period, "align": "start"}},
+        {"entity": e["gas"], "name": "Gas", "type": "column", "yaxis_id": "gas", "color": GAS_COLOR,
+         "unit": " m³", "float_precision": 2, "statistics": {"type": "change", "period": period, "align": "start"}},
+    ]
+
+
+INSIGHT_STYLE = """
+ha-card { overflow: hidden; }
+ha-card::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .9;
+  background: radial-gradient(120% 140% at 0% 0%, color-mix(in srgb, var(--primary-color) 16%, transparent), transparent 60%),
+              radial-gradient(90% 120% at 100% 100%, color-mix(in srgb, #ff8a4c 12%, transparent), transparent 60%);
+}
+.row, .content { height: auto !important; align-items: flex-start !important; }
+ha-tile-info { padding: 4px 0; }
+span[slot=primary] { white-space: normal !important; font-size: 15px !important; line-height: 1.35 !important; }
+span[slot=secondary] { white-space: normal !important; line-height: 1.45 !important; margin-top: 4px; }
+ha-tile-icon { --tile-icon-color: var(--primary-color); }
+"""
+
+
+def insight_card(text, title=None, icon="mdi:creation", color="deep-purple", tap=None, cols=12):
+    """A few lines of the AI's energy story: a gradient-tinted card that wraps its text."""
+    c = {"type": "custom:mushroom-template-card", "icon": icon, "icon_color": color,
+         "primary": title or f"{{{{ states('{text}') }}}}",
+         "secondary": f"{{{{ states('{text}') }}}}" if title else "",
+         "tap_action": tap or {"action": "none"}, "_style": "plain",
+         "card_mod": {"style": GLASS + INSIGHT_STYLE}, **grid(cols, rows="auto")}
+    return c
+
+
+def energy_cards(e):
+    """Home page: today's power curve and hour-by-hour use (both open the Energy dashboard), and the AI's
+    one-line story of the day, which opens the Energy page."""
+    dash = e.get("dashboard", "/energy")
+    cards = [heading("Energy", "mdi:lightning-bolt", tap=dash,
+                     badges=[badge(b["entity"], b.get("color"), icon=b.get("icon"),
+                                   tap_action=nav(dash)) for b in ents(e.get("badges"))])]
+    if e.get("graph"):
+        cards.append(mini_graph(
+            [(e["graph"], "Power", "#f7b731")], name="Power today", hours=24, height=120,
+            show={"fill": "fade", "labels": False, "legend": False, "extrema": True, "icon": False},
+            color_thresholds=[{"value": 0, "color": "#20bf6b"}, {"value": 0.8, "color": "#f7b731"},
+                              {"value": 2, "color": "#eb3b5a"}],
+            tap_action={"action": "navigate", "navigation_path": dash}))
+    if e.get("graph") and e.get("gas"):
+        cards.append(apex(usage_series(e), "Today, hour by hour", height=150))
+    ins = e.get("insight")
+    if ins:
+        cards.append(insight_card(ins["headline"], title="{{ states('%s') }}" % ins["headline"],
+                                  tap=nav(energy_path())))
+        cards[-1]["secondary"] = "Tap for the full story"
+    return cards
+
+
+def energy_view(e):
+    """Energy page: the AI's story of the last day (what was used when, and the likely cause), the last
+    48 hours and 14 days by the hour/day, and what's drawing power right now."""
+    dash = e.get("dashboard", "/energy")
+    ins = e.get("insight") or {}
+    sections = []
+    if ins:
+        story = [{"type": "custom:mushroom-title-card", "title": "{{ states('%s') }}" % ins["headline"],
+                  "subtitle": ("✨ The day in energy · written {{ relative_time(states.%s.last_changed) }} ago"
+                               % ins["headline"]), **grid(36)}]
+        for key, label, icon, color in (("gas", "Gas", "mdi:fire", "deep-orange"),
+                                        ("power", "Electricity", "mdi:flash", "deep-purple"),
+                                        ("tip", "Tip", "mdi:lightbulb-on-outline", "amber")):
+            if ins.get(key):
+                story.append(insight_card(ins[key], title=label, icon=icon, color=color))
+        sections.append(section(story, span=3))
+    chart = [heading("Last 48 hours", "mdi:chart-bar", tap=dash),
+             apex(usage_series(e), span="48h", start="hour", offset="-47h", height=260, cols=36)]
+    sections.append(section(chart, span=2))
+    now = [heading("Right now", "mdi:gauge")]
+    if e.get("graph"):
+        now.append(tile(e["graph"], 12, name="Power now", icon="mdi:flash", color="amber"))
+    if e.get("gas_flow"):
+        f = e["gas_flow"]
+        now.append(tile(f, 12, name="Gas flow", icon="mdi:fire", color="deep-orange", state_content=[
+            "state"]))
+    if e.get("baseload"):
+        now.append(tile(e["baseload"], 12, name="Always on (24 h low)", icon="mdi:power-plug-outline",
+                        color="blue-grey"))
+    now += [tile_from(d, 6, color="green") for d in ents(e.get("devices"))]
+    actions = []
+    if ins.get("refresh"):
+        actions.append(tile(ins["refresh"], 6, name="Rewrite story", icon="mdi:creation", color="deep-purple",
+                            hide_state=True, tap={"action": "perform-action", "perform_action": ins["refresh"]}))
+    actions.append(tile(e["graph"], 6, name="Energy dashboard", icon="mdi:open-in-new", color="primary",
+                        hide_state=True, tap=nav(dash)))
+    sections.append(section(now + actions))
+    sections.append(section([heading("Last 14 days", "mdi:calendar-month-outline", tap=dash),
+                             apex(usage_series(e, "day"), span="14d", start="day", offset="-13d",
+                                  height=220, cols=36)], span=3))
+    return {"title": "Energy", "path": "energy", "subview": True, "back_path": f"/{URL_PATH}/home",
+            "type": "sections", "max_columns": 3, "dense_section_placement": True, "sections": sections}
+
+
+# --------------------------------------------------------------------------------------
+# Robot vacuum: a page that really drives it — map, rooms, suction, mop, maintenance
+# --------------------------------------------------------------------------------------
+ROOM_ICONS = {"living": "mdi:sofa-outline", "kitchen": "mdi:silverware-fork-knife", "hall": "mdi:stairs",
+              "entry": "mdi:door-open", "toilet": "mdi:toilet", "gray": "mdi:bed-outline",
+              "grey": "mdi:bed-outline", "study": "mdi:desk", "bed": "mdi:bed-king-outline",
+              "laundry": "mdi:washing-machine", "shower": "mdi:shower-head", "bath": "mdi:bathtub-outline"}
+FAN_ICONS = {"quiet": "mdi:fan-speed-1", "gentle": "mdi:feather", "balanced": "mdi:fan-speed-2",
+             "standard": "mdi:fan-speed-2", "turbo": "mdi:fan-speed-3", "max": "mdi:fan-plus"}
+
+
+def vacuum_path():
+    return f"/{URL_PATH}/vacuum"
+
+
+def vacuum_maps(call, v):
+    """Rooms per map from roborock.get_maps (segment ids are per map), and each map's image entity."""
+    try:
+        r = call("call_service", domain="roborock", service="get_maps",
+                 target={"entity_id": v["entity"]}, return_response=True)
+        maps = r["response"][v["entity"]]["maps"]
+    except (RuntimeError, KeyError, TypeError) as err:
+        print(f"WARNING: could not read the vacuum's maps ({err}); the vacuum page has no rooms")
+        return
+    base = friendly(v["entity"])
+    images = {s["attributes"].get("friendly_name"): e for e, s in STATES.items() if e.startswith("image.")}
+    v["maps"] = [{"name": m["name"], "rooms": [(int(k), n) for k, n in m.get("rooms", {}).items()],
+                  "image": images.get(f"{base} {m['name']}")} for m in maps]
+
+
+def vacuum_status_template(v):
+    """A friendly status line with a bit of personality."""
+    e, name = v["entity"], v.get("name", "The vacuum")
+    room = f"states('{v['current_room']}')" if v.get("current_room") else "''"
+    return (f"{{% set s = states('{e}') %}}{{% set r = {room} %}}"
+            f"{{% set b = state_attr('{e}', 'battery_level') or states('{v.get('battery', '')}') %}}"
+            "{% set here = (' in the ' ~ r | lower) if r not in ('', 'unknown', 'unavailable') else '' %}"
+            "{% if s == 'cleaning' %}" + name + " is hunting crumbs" + "{{ here }} 🧹"
+            "{% elif s == 'returning' %}" + name + " is heading home 🏠"
+            "{% elif s == 'paused' %}" + name + " is taking a breather" + "{{ here }}"
+            "{% elif s == 'error' %}" + name + " is stuck and needs a hand 🆘"
+            "{% elif s == 'docked' and b | int(100) < 100 %}" + name + " is recharging · {{ b }}% ⚡"
+            "{% elif s == 'docked' %}" + name + " is resting on the throne 👑"
+            "{% else %}" + name + " is {{ s }}{% endif %}")
+
+
+def vacuum_view(v):
+    e, name = v["entity"], v.get("name", "Vacuum")
+    svc = lambda action, **data: {"action": "perform-action", "perform_action": action,  # noqa: E731
+                                  **({"data": data} if data else {}), "target": {"entity_id": e}}
+    script = lambda s, **data: {"action": "perform-action", "perform_action": s,  # noqa: E731
+                                **({"data": data} if data else {})}
+    sel = v.get("selection")  # input_text holding the chosen segment ids
+    maps = v.get("maps") or []
+    map_sel = v.get("map_select")
+
+    # ---- Hero: status line, map, and the big controls
+    status = {"type": "custom:mushroom-title-card", "title": vacuum_status_template(v),
+              "subtitle": (f"{{% set a = states('{v['area']}') if '{v.get('area', '')}' else '' %}}"
+                           f"{{% set t = states('{v.get('clean_time', '')}') %}}"
+                           f"Battery {{{{ state_attr('{e}', 'battery_level') or states('{v.get('battery', '')}') }}}}%"
+                           f"{{{{ ' · last run ' ~ a ~ ' m² in ' ~ (t | float(0)) | round(0) | int ~ ' min' if a not in ('', 'unknown', 'unavailable') else '' }}}}"
+                           f"{{{{ ' · fan ' ~ state_attr('{e}', 'fan_speed') if state_attr('{e}', 'fan_speed') else '' }}}}")
+              if v.get("area") else f"Battery {{{{ state_attr('{e}', 'battery_level') }}}}%", **grid(36)}
+    hero = [status]
+    for m in maps:
+        if not m.get("image"):
+            continue
+        card = {"type": "picture-entity", "entity": m["image"], "show_name": False, "show_state": False,
+                "fit_mode": "contain", "aspect_ratio": "4:3", "tap_action": {"action": "more-info"},
+                "_style": "plain", "card_mod": {"style": VACUUM_MAP_STYLE.replace("@NAME@", json.dumps(m["name"]))},
+                **grid(20, rows=5)}
+        if map_sel and len(maps) > 1:
+            card["visibility"] = [{"condition": "state", "entity": map_sel, "state": m["name"]}]
+        hero.append(card)
+    big = []
+    for label, icon, color, action, show in (
+            ("Start", "mdi:play", "teal", svc("vacuum.start"), ["docked", "idle", "paused", "returning", "error"]),
+            ("Pause", "mdi:pause", "amber", svc("vacuum.pause"), ["cleaning"]),
+            ("Dock", "mdi:home-import-outline", "blue", svc("vacuum.return_to_base"), None),
+            ("Spot", "mdi:target", "deep-purple", svc("vacuum.clean_spot"), None),
+            ("Find me", "mdi:map-marker-radius-outline", "pink", svc("vacuum.locate"), None),
+            ("Stop", "mdi:stop", "red", svc("vacuum.stop"), ["cleaning", "paused", "returning"])):
+        c = {"type": "custom:mushroom-template-card", "icon": icon, "icon_color": color, "primary": label,
+             "vertical": True, "tap_action": action, "entity": e, **grid(4, rows=2)}
+        if show:
+            c["visibility"] = [{"condition": "state", "entity": e, "state": show}]
+        big.append(c)
+    hero += big
+    # suction: one chip per fan speed, the current one lit
+    fans = STATES.get(e, {}).get("attributes", {}).get("fan_speed_list") or []
+    if fans:
+        hero.append({"type": "custom:mushroom-chips-card", "alignment": "justify", "chips": [
+            {"type": "template", "icon": FAN_ICONS.get(f, "mdi:fan"), "content": f.capitalize(),
+             "icon_color": f"{{{{ 'teal' if state_attr('{e}', 'fan_speed') == '{f}' else 'disabled' }}}}",
+             "tap_action": svc("vacuum.set_fan_speed", fan_speed=f),
+             "card_mod": {"style": f"{{% if state_attr('{e}', 'fan_speed') == '{f}' %}}ha-card {{ "
+                                   "background: color-mix(in srgb, #2dd4bf 18%, transparent) !important; "
+                                   "border-color: color-mix(in srgb, #2dd4bf 45%, transparent) !important; }"
+                                   "{% endif %}"}}
+            for f in fans], **grid(16)})
+    # cleaning mode and mop water sit beside the map too
+    for key, label, icon in (("cleaning_mode", "Cleaning", "mdi:robot-vacuum"),
+                             ("mop_intensity", "Mop water", "mdi:water-outline")):
+        if v.get(key) and usable(v[key]):
+            hero.append(tile(v[key], 8, name=label, icon=icon, color="teal", features=[{"type": "select-options"}]))
+    sections = [section(hero, span=3)]
+
+    # ---- Rooms of the loaded map: tap to pick, hold to clean that room right away
+    if maps and sel:
+        rooms = [heading("Rooms", "mdi:floor-plan")]
+        if map_sel:
+            rooms.append(tile(map_sel, 12, name="Map", icon="mdi:map-outline", color="teal", rows=2,
+                              features=[{"type": "select-options"}]))
+        chosen = (f"states('{sel}').split(',') | map('trim') | select('match', '^[0-9]+$') | map('int') | list")
+        for m in maps:
+            for seg, rname in m["rooms"]:
+                icon = next((i for k, i in ROOM_ICONS.items() if k in rname.lower()), "mdi:texture-box")
+                on = f"{seg} in {chosen}"
+                c = {"type": "custom:mushroom-template-card", "icon": icon, "primary": rname, "vertical": True,
+                     "icon_color": f"{{{{ 'teal' if {on} else 'disabled' }}}}",
+                     "secondary": f"{{{{ 'Picked' if {on} else 'Tap to pick' }}}}",
+                     "tap_action": script(v["toggle_script"], segment=seg),
+                     "hold_action": {**script(v["clean_room_script"], segment=seg),
+                                     "confirmation": {"text": f"Clean the {rname.lower()} now?"}},
+                     "_style": "plain",
+                     "card_mod": {"style": GLASS + f"{{% if {on} %}}{ROOM_PICKED_STYLE}{{% endif %}}"},
+                     **grid(6, rows=2)}
+                if map_sel and len(maps) > 1:
+                    c["visibility"] = [{"condition": "state", "entity": map_sel, "state": m["name"]}]
+                rooms.append(c)
+        n = f"({chosen}) | count"
+        has = [{"condition": "state", "entity": sel, "state_not": ""}]
+        rooms.append({"type": "custom:mushroom-template-card", "icon": "mdi:broom", "icon_color": "teal",
+                      "primary": f"{{% set n = {n} %}}Clean {{{{ n }}}} room{{{{ 's' if n != 1 else '' }}}}",
+                      "secondary": (f"{{% set p = states('{v['passes']}') | int(1) %}}"
+                                    "{{ p }} pass{{ 'es' if p > 1 else '' }} · tap to start"
+                                    if v.get("passes") else "Tap to start"),
+                      "tap_action": script(v["clean_script"]), "visibility": has, **grid(18, rows=2)})
+        if v.get("passes"):
+            rooms.append({**tile(v["passes"], 12, name="Passes", icon="mdi:repeat", color="teal",
+                                 features=[{"type": "numeric-input", "style": "buttons"}]), "visibility": has})
+        rooms.append({**tile(sel, 6, name="Clear", icon="mdi:close", color="grey", hide_state=True,
+                             tap=script(v["clear_script"])), "visibility": has})
+        sections.append(section(rooms, span=3))
+
+    # ---- Mode, maintenance, quiet hours
+    mode = [heading("Settings", "mdi:tune-variant")]
+    if v.get("quiet_hours"):
+        mode.append(tile(v["quiet_hours"], 12, name="Quiet hours", icon="mdi:sleep", color="indigo",
+                         state_content=["state"]))
+    if v.get("volume") and usable(v["volume"]):
+        mode.append(tile(v["volume"], 12, name="Voice volume", icon="mdi:volume-high", color="teal",
+                         features=[{"type": "numeric-input", "style": "slider"}]))
+    sections.append(section(mode))
+    care = [heading("Maintenance", "mdi:wrench-outline")]
+    for key, label, icon in (("brush", "Main brush", "mdi:brush"), ("side_brush", "Side brush", "mdi:brush-variant"),
+                             ("filter", "Filter", "mdi:air-filter"), ("sensors", "Sensors", "mdi:eye-outline")):
+        if v.get(key) and usable(v[key]):
+            ent_ = v[key]
+            care.append({**tile(ent_, 6, name=label, icon=icon, color="teal"), "_style": "plain",
+                         "card_mod": {"style": GLASS + f"{{% if states('{ent_}') | float(99) < 5 %}}"
+                                      "ha-card { border-color: color-mix(in srgb, #ff5a5f 55%, transparent) !important; }"
+                                      " ha-tile-icon { --tile-icon-color: #ff5a5f; }{% endif %}"}})
+    sections.append(section(care))
+    stats = [heading("History", "mdi:history")]
+    for key, label, icon in (("last_clean", "Last clean", "mdi:broom"), ("total_count", "Runs", "mdi:counter"),
+                             ("total_area", "Area cleaned", "mdi:texture-box"), ("error", "Error", "mdi:alert-circle-outline")):
+        if v.get(key) and usable(v[key]):
+            stats.append(tile(v[key], 6, name=label, icon=icon, color="teal" if key != "error" else "red"))
+    sections.append(section(stats))
+    return {"title": name, "path": "vacuum", "subview": True, "back_path": f"/{URL_PATH}/home",
+            "type": "sections", "max_columns": 3, "dense_section_placement": True, "sections": sections}
+
+
+VACUUM_MAP_STYLE = """
+ha-card {
+  border-radius: 28px !important; overflow: hidden; height: 100%;
+  background: radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, #2dd4bf 10%, transparent), transparent 70%),
+              color-mix(in srgb, var(--card-background-color) 72%, transparent) !important;
+  border: 1px solid color-mix(in srgb, var(--primary-text-color) 9%, transparent) !important;
+  box-shadow: 0 10px 30px -12px rgba(0, 0, 0, .35) !important;
+}
+hui-image { height: 100%; padding: 12px; box-sizing: border-box; }
+ha-card::after {
+  content: @NAME@; position: absolute; top: 16px; left: 20px; pointer-events: none;
+  font-size: 13px; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; opacity: .6;
+}
+"""
+ROOM_PICKED_STYLE = """
+ha-card { border-color: color-mix(in srgb, #2dd4bf 60%, transparent) !important;
+  background: color-mix(in srgb, #2dd4bf 14%, var(--card-background-color)) !important;
+  box-shadow: 0 0 0 1px color-mix(in srgb, #2dd4bf 50%, transparent), 0 14px 30px -14px rgba(45, 212, 191, .5) !important; }
+ha-tile-icon { scale: 1.08; }
+"""
+
+
+# --------------------------------------------------------------------------------------
+# Scenes: a row of big buttons per room; the scene last used glows while the room is lit
+# --------------------------------------------------------------------------------------
+def scenes_section(r):
+    scenes = ents(r.get("scenes"))
+    lights = room_lights(r)
+    ids_ = [s["entity"] for s in scenes]
+    lit = lights_on(lights)[3:-3] + " > 0" if lights else "true"
+    latest = ("{% set ts = " + json.dumps(ids_) + " | map('states') | reject('in', ['unknown', 'unavailable']) "
+              "| list %}{% set latest = ts | max if ts else '' %}")
+    cols = max(6, min(12, 36 // (len(scenes) + (1 if lights else 0))))
+    cards = [heading("Scenes", "mdi:palette-outline")]
+    for s in scenes:
+        style = (GLASS + latest + f"{{% if {lit} and states('{s['entity']}') == latest %}}" + SCENE_ON_STYLE
+                 + "{% endif %}")
+        cards.append({**tile(s["entity"], cols, vertical=True, name=s.get("name"), icon=s.get("icon", "mdi:palette"),
+                             color=s.get("color", "deep-purple"), hide_state=True, tap=scene_tap(s["entity"])),
+                      "_style": "plain", "card_mod": {"style": style}})
+    if lights:
+        n = lights_on(lights)[3:-3]
+        cards.append({"type": "custom:mushroom-template-card", "primary": "All off", "vertical": True,
+                      "icon": "mdi:lightbulb-off-outline",
+                      "secondary": f"{{% set n = {n} %}}{{{{ 'Everything off' if n == 0 else n ~ ' on' }}}}",
+                      "icon_color": f"{{{{ 'disabled' if {n} == 0 else 'red' }}}}",
+                      "tap_action": {"action": "perform-action", "perform_action": "light.turn_off",
+                                     "target": {"entity_id": lights}, "data": {"transition": 3}},
+                      **grid(cols)})
+    return section(cards, span=3)
+
+
+SCENE_ON_STYLE = """
+ha-card { border-color: color-mix(in srgb, var(--tile-color) 55%, transparent) !important;
+  background: color-mix(in srgb, var(--tile-color) 12%, var(--card-background-color)) !important; }
+ha-tile-icon { scale: 1.12; }
+"""
+
+
 def floor_view(f, areas_by_floor):
     rooms = [a for a in areas_by_floor[f["id"]] if a in ROOMS]
     floor_lights = [l for a in rooms for l in room_lights(ROOMS[a])]
@@ -1177,7 +1678,9 @@ def hero_background(picture):
 
     return ", ".join([
         # top scrim, so the floating header and the room name stay legible on bright photos
-        "linear-gradient(to bottom, rgba(0,0,0,.38), rgba(0,0,0,0) 26vh)",
+        "linear-gradient(to bottom, var(--lumen-hero-scrim, rgba(0,0,0,.38)), rgba(0,0,0,0) 26vh)",
+        # a soft shade behind the room name, so it reads on bright photos
+        "radial-gradient(70vw 34vh at 0% 22vh, rgba(0,0,0,.28), transparent 70%)",
         # fade into the page colour below the hero
         f"linear-gradient(to bottom, transparent {step('30vh', '16vh')}, "
         f"color-mix(in srgb, {bg} 55%, transparent) {step('50vh', '32vh')}, "
@@ -1204,12 +1707,11 @@ def room_view(area_id, r, floor):
     lights = split(r.get("lights"))
     sections = [section([room_card(area_id, r, cols=36, navigate=False, banner=True)], span=3)]
 
-    # Lighting
-    scenes = ents(r.get("scenes"))
-    if lights or scenes:
+    # Scenes, then the lights one by one
+    if r.get("scenes"):
+        sections.append(scenes_section(r))
+    if lights:
         cards = [heading("Lighting", "mdi:lightbulb-group")]
-        cards += [tile(s["entity"], 12, name=s.get("name"), icon=s.get("icon", "mdi:weather-night"),
-                       color="deep-purple", hide_state=True, tap=scene_tap(s["entity"])) for s in scenes]
         cards += [tile_from(l, 12, color="amber",
                             features=[{"type": "light-brightness"}] if has_brightness(l["entity"]) else None)
                   for l in lights]
@@ -1234,9 +1736,11 @@ def room_view(area_id, r, floor):
         badges = [badge(v["battery"], "green")] if v.get("battery") else []
         if v.get("current_room"):
             badges.append(badge(v["current_room"], "teal", icon="mdi:map-marker"))
-        cards = [heading(v.get("name", "Vacuum"), "mdi:robot-vacuum", badges=badges),
+        cards = [heading(v.get("name", "Vacuum"), "mdi:robot-vacuum", badges=badges, tap=vacuum_path()),
                  tile(v["entity"], 12, name="Robot vacuum", color="teal", state_content=["state", "fan_speed"],
-                      features=[{"type": "vacuum-commands", "commands": ["start_pause", "return_home", "locate"]}])]
+                      features=[{"type": "vacuum-commands", "commands": ["start_pause", "return_home", "locate"]}]),
+                 tile(v["entity"], 12, name="Rooms, map & modes", icon="mdi:floor-plan", color="teal",
+                      hide_state=True, tap=nav(vacuum_path()))]
         for key, name, icon, color in (("last_clean", "Last clean", "mdi:broom", "teal"),
                                        ("brush", "Brush", "mdi:brush", "teal"),
                                        ("filter", "Filter", "mdi:air-filter", "teal"),
@@ -1410,6 +1914,12 @@ def main():
     views += [room_view(a, ROOMS[a], floor_by_id[ROOMS[a]["floor"]])
               for f in FLOORS for a in areas_by_floor[f["id"]] if a in ROOMS]
 
+    if CFG.get("energy", {}).get("insight"):
+        views.append(energy_view(CFG["energy"]))
+    vac = next((r["vacuum"] for r in ROOMS.values() if r.get("vacuum", {}).get("selection")), None)
+    if vac:
+        vacuum_maps(call, vac)
+        views.append(vacuum_view(vac))
     if CFG.get("birdnet"):
         views.append(birds_view(CFG["birdnet"]))
         room = next((v for v in views if v["path"] == ROOMS.get(CFG["birdnet"].get("room"), {}).get("path")), None)

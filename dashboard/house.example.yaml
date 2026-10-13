@@ -36,18 +36,33 @@ quick_settings:              # 3×3 grid of tiles on the home page
   - {entity: light.porch, name: Entrance, icon: mdi:door-open, color: amber}
   - {entity: light.garden, name: Garden, icon: mdi:pine-tree, color: amber}
   - {entity: light.terrace, name: Terrace, icon: mdi:string-lights, color: amber}
-  - {entity: vacuum.robot, name: Vacuum, icon: mdi:robot-vacuum, color: teal}
+  - {entity: vacuum.robot, name: Vacuum, icon: mdi:robot-vacuum, color: teal,
+     action: {action: navigate, navigation_path: /home-dashboard/vacuum}}   # any tap action works
+  # - {entity: script.good_night, name: Good night, icon: mdi:power-sleep, color: indigo, action: script,
+  #    confirm: "Turn everything off?"}                                     # runs a script, optionally asks first
   - {entity: media_player.whole_house, name: Music, icon: mdi:speaker-multiple, color: pink}
   - {entity: todo.shopping_list, name: Groceries, icon: mdi:cart-outline, color: cyan, action: todo}
 
-energy:                      # optional
-  graph: sensor.power_consumption
+# night_mode: input_boolean.night_mode   # optional: the greeting says when it's on
+
+energy:                      # optional; the heading and power graph open the Energy dashboard
+  dashboard: /energy
+  graph: sensor.power_consumption        # power sensor: today's curve, and electricity per hour from its mean
+  power_unit: kW                         # W or kW
+  gas: sensor.gas_consumption            # optional: gas meter; with `graph`, an hour-by-hour chart (apexcharts-card)
+  gas_flow: sensor.gas_flow_rate         # optional: a Derivative helper of the gas meter, in m³/h
+  baseload: sensor.electricity_baseload  # optional: a Statistics helper, the 24 h minimum of `graph`
+  insight:                               # optional: an AI-written story of the day, and an Energy page
+    headline: input_text.energy_insight_headline   # written by a script of your own (e.g. ai_task.generate_data)
+    gas: input_text.energy_insight_gas
+    power: input_text.energy_insight_power
+    tip: input_text.energy_insight_tip
+    refresh: script.energy_insight_refresh         # "Rewrite story" button
+  devices:                               # optional: measured consumers on the Energy page
+    - {entity: sensor.fridge_power, name: Fridge, icon: mdi:fridge-outline}
   badges:
     - {entity: sensor.electricity_tariff, icon: mdi:clock-outline}
     - {entity: sensor.co2_intensity, icon: mdi:leaf, color: green}
-  tiles:
-    - {entity: sensor.gas_consumption, name: Gas, icon: mdi:fire, color: deep-orange}
-    - {entity: sensor.grid_fossil_percentage, name: Fossil grid, icon: mdi:factory, color: blue-grey}
 
 birdnet:                     # optional: BirdNET-Go on the home page + a Birds page (sensors: ../ha/birdnet_go.yaml)
   title: Outside             # heading of the home-page block
@@ -60,13 +75,16 @@ birdnet:                     # optional: BirdNET-Go on the home page + a Birds p
   recent: sensor.birdnet_go_recent_detections        # optional: latest detections on the Birds page
   camera: camera.garden                              # optional: live camera with the last bird laid over it
   camera_name: Garden
+  camera_detect: [binary_sensor.garden_person]       # optional: green ring around the camera while these are on
   camera_page: /home-dashboard/cameras               # optional: where the block's heading goes
   door_camera:                                       # optional: a second camera beside it
     live: camera.front_door                          # shown live...
     idle: camera.front_door_last_visitor             # ...or this snapshot while `wired` is off and `timer` idle
     wired: input_boolean.doorbell_wired              # optional
     timer: timer.front_door_activity                 # optional
-    activity: automation.front_door_activity         # optional: its last run is shown as "Last visitor · 2 h ago"
+    activity: automation.front_door_activity         # optional: its last run is shown as "2 h ago · Tap for live"
+    asleep: binary_sensor.front_door_sleep_status    # optional: battery camera's sleep sensor; live while it's awake
+    detect: [binary_sensor.front_door_person]        # optional: green ring while these are on
     name: Front door
   saezuri_app: 22d5d804_saezuri                      # optional: embed the Saezuri collage on the Birds page
   birdnet_app: db21ed7f_birdnet-go                   # optional: "Open BirdNET-Go" button (the app's slug)
@@ -90,13 +108,19 @@ birdnet:                     # optional: BirdNET-Go on the home page + a Birds p
 floors:                      # `id` is the HA floor ID
   - {id: ground_floor, path: ground-floor, name: Ground floor, short: Ground, icon: mdi:home-floor-g, tagline: "Living, cooking & outdoors"}
   - {id: first_floor, path: first-floor, name: First floor, short: First, icon: mdi:home-floor-1, tagline: "Sleeping & working"}
+  # - {id: attic, path: attic, name: Attic, icon: mdi:home-roof, nav: false}   # nav: false → in the More menu
+
+# nav_tabs:                  # optional: extra navbar tabs after the floors
+#   - {path: cameras, label: Outside, icon: mdi:flower-tulip-outline, also: [birds]}   # `also`: pages that light it up
 
 rooms:
   living_room:
     floor: ground_floor
     name: Living room
     lights: [light.living_room_ceiling, light.living_room_floor_lamp]
-    scenes: [{entity: scene.evening, name: Evening scene}]
+    scenes:                  # a row of scene buttons on the room page; the last one used glows
+      - {entity: scene.living_room_bright, name: Bright, icon: mdi:white-balance-sunny, color: amber}
+      - {entity: scene.evening, name: Evening, icon: mdi:weather-sunset, color: pink}
     media: [media_player.living_room_tv, media_player.living_room_speaker]
     vacuum:                  # optional robot-vacuum panel
       entity: vacuum.robot
@@ -107,6 +131,18 @@ rooms:
       brush: sensor.robot_main_brush_time_left
       filter: sensor.robot_filter_time_left
       quiet_hours: switch.robot_do_not_disturb
+      # With `selection`, the vacuum gets its own page (Roborock): live map, controls, fan speed, and rooms per map
+      # (from roborock.get_maps) to pick and clean. The helpers and scripts are yours to create:
+      # selection: input_text.vacuum_rooms           # comma-separated segment ids
+      # passes: input_number.vacuum_passes
+      # toggle_script: script.vacuum_toggle_room     # field `segment`
+      # clean_room_script: script.vacuum_clean_room  # field `segment`
+      # clean_script: script.vacuum_clean_rooms      # cleans the selection (vacuum.send_command app_segment_clean)
+      # clear_script: script.vacuum_clear_rooms
+      # map_select: select.robot_selected_map
+      # cleaning_mode: select.robot_cleaning_mode
+      # mop_intensity: select.robot_mop_intensity
+      # side_brush / sensors / area / clean_time / total_count / total_area / error / volume: more sensors
     motion: [binary_sensor.living_room_occupancy]
     graphs:
       - {entity: sensor.living_room_temperature, name: Temperature, color: "#ff9f43"}
