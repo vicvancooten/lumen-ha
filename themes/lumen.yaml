@@ -41,6 +41,14 @@ Lumen:
   mush-control-border-radius: "9999px"
   mush-badge-border-radius: "9999px"
 
+  # ---------- Space ----------
+  # A little more air between sections and cards than Home Assistant's defaults.
+  ha-view-sections-row-gap: "40px"
+  ha-view-sections-column-gap: "36px"
+  ha-view-sections-narrow-column-gap: "14px"
+  ha-section-grid-row-gap: "12px"
+  ha-section-grid-column-gap: "12px"
+
   # ---------- Motion ----------
   lumen-ease: "cubic-bezier(.2, .8, .2, 1)"
   lumen-spring: "cubic-bezier(.22, 1.3, .36, 1)"
@@ -112,54 +120,78 @@ Lumen:
       navbar-route-icon-color: "#9aa1b3"
       navbar-primary-color: "#8b7cff"
 
+      # Lumen surfaces, used by the dashboard's card styles
+      lumen-glass: "72%"
+      lumen-card-border: "rgba(238, 240, 246, 0.09)"
+      lumen-card-border-hover: "rgba(238, 240, 246, 0.16)"
+      lumen-card-shadow: "0 10px 30px -12px rgba(0, 0, 0, .35)"
+      lumen-card-shadow-hover: "0 22px 44px -18px rgba(0, 0, 0, .5)"
+      lumen-bar-shadow: "0 18px 40px -16px rgba(0, 0, 0, .45)"
+      lumen-hero-scrim: "rgba(0, 0, 0, .38)"
+
     # ============================== LIGHT ==============================
+    # Warm porcelain rather than office grey: an off-white canvas with faint colour in the corners,
+    # bright white cards with a hairline edge, and soft two-layer shadows instead of one dark smudge.
     light:
-      primary-color: "#6c5ce7"
-      light-primary-color: "#a29bfe"
-      dark-primary-color: "#5a4bd1"
+      primary-color: "#5b4fe0"
+      light-primary-color: "#9d94ff"
+      dark-primary-color: "#4a3fc8"
       text-primary-color: "#ffffff"
+      accent-color: "#f59e0b"
 
-      primary-background-color: "#f3f4f8"
-      secondary-background-color: "#eceef4"
+      primary-background-color: "#f5f4f0"
+      secondary-background-color: "#edebe6"
       lovelace-background: >-
-        radial-gradient(1200px 700px at 0% 0%, rgba(108,92,231,.10), transparent 60%),
-        radial-gradient(900px 600px at 100% 20%, rgba(255,181,71,.10), transparent 60%),
-        #f3f4f8
+        radial-gradient(1100px 650px at 0% 0%, rgba(124, 108, 255, .11), transparent 62%),
+        radial-gradient(900px 620px at 100% 0%, rgba(255, 170, 90, .11), transparent 62%),
+        radial-gradient(1000px 800px at 50% 110%, rgba(45, 212, 191, .06), transparent 60%),
+        linear-gradient(180deg, #f8f7f4 0%, #f2f0eb 100%)
       card-background-color: "#ffffff"
-      ha-card-background: "rgba(255, 255, 255, 0.78)"
-      ha-card-border-color: "rgba(17, 24, 39, 0.06)"
-      ha-card-box-shadow: "0 12px 32px -16px rgba(30, 34, 60, 0.25)"
-      ha-dialog-surface-background: "#ffffff"
-      mdc-theme-surface: "#ffffff"
-      divider-color: "rgba(17, 24, 39, 0.08)"
-      outline-color: "rgba(17, 24, 39, 0.12)"
+      ha-card-background: "rgba(255, 255, 255, 0.86)"
+      ha-card-border-color: "rgba(28, 25, 23, 0.07)"
+      ha-card-box-shadow: "0 1px 2px rgba(28, 25, 23, .05), 0 12px 32px -18px rgba(28, 25, 23, .22)"
+      ha-dialog-surface-background: "#fdfcfa"
+      mdc-theme-surface: "#fdfcfa"
+      divider-color: "rgba(28, 25, 23, 0.08)"
+      outline-color: "rgba(28, 25, 23, 0.12)"
 
-      primary-text-color: "#161a23"
-      secondary-text-color: "#646b7d"
-      disabled-text-color: "#a7adbb"
-      state-icon-color: "#646b7d"
-      paper-item-icon-color: "#646b7d"
+      primary-text-color: "#16151a"
+      secondary-text-color: "#6c6a73"
+      disabled-text-color: "#aeacb4"
+      state-icon-color: "#6c6a73"
+      paper-item-icon-color: "#6c6a73"
+      state-light-on-color: "#f59e0b"
+      state-light-active-color: "#f59e0b"
 
-      app-theme-color: "#f3f4f8"
-      app-header-background-color: "#f3f4f8"
-      app-header-text-color: "#161a23"
-      app-header-selection-bar-color: "#6c5ce7"
-      sidebar-background-color: "#f7f8fb"
-      sidebar-text-color: "#2b3040"
-      sidebar-icon-color: "#646b7d"
-      sidebar-selected-text-color: "#6c5ce7"
-      sidebar-selected-icon-color: "#6c5ce7"
+      app-theme-color: "#f5f4f0"
+      app-header-background-color: "#f5f4f0"
+      app-header-text-color: "#16151a"
+      app-header-selection-bar-color: "#5b4fe0"
+      sidebar-background-color: "#f8f7f4"
+      sidebar-text-color: "#2c2a33"
+      sidebar-icon-color: "#6c6a73"
+      sidebar-selected-text-color: "#5b4fe0"
+      sidebar-selected-icon-color: "#5b4fe0"
 
-      input-fill-color: "rgba(17, 24, 39, 0.03)"
-      switch-checked-color: "#6c5ce7"
+      input-fill-color: "rgba(28, 25, 23, 0.035)"
+      switch-checked-color: "#5b4fe0"
       switch-checked-button-color: "#ffffff"
-      switch-checked-track-color: "#6c5ce7"
+      switch-checked-track-color: "#5b4fe0"
       switch-unchecked-button-color: "#ffffff"
-      switch-unchecked-track-color: "#c9cedb"
+      switch-unchecked-track-color: "#d6d3cc"
 
-      navbar-background-color: "rgba(255, 255, 255, 0.78)"
-      navbar-route-icon-color: "#646b7d"
-      navbar-primary-color: "#6c5ce7"
+      navbar-background-color: "rgba(255, 255, 255, 0.8)"
+      navbar-route-icon-color: "#6c6a73"
+      navbar-primary-color: "#5b4fe0"
+
+      # Lumen surfaces, used by the dashboard's card styles
+      lumen-glass: "88%"
+      lumen-card-border: "rgba(28, 25, 23, 0.07)"
+      lumen-card-border-hover: "rgba(28, 25, 23, 0.13)"
+      lumen-card-shadow: "0 1px 2px rgba(28, 25, 23, .05), 0 10px 28px -16px rgba(28, 25, 23, .20), inset 0 1px 0 rgba(255, 255, 255, .9)"
+      lumen-card-shadow-hover: "0 2px 4px rgba(28, 25, 23, .05), 0 24px 44px -20px rgba(40, 30, 80, .26), inset 0 1px 0 rgba(255, 255, 255, .9)"
+      lumen-bar-shadow: "0 1px 2px rgba(28, 25, 23, .05), 0 16px 36px -18px rgba(40, 30, 80, .28)"
+      lumen-hero-scrim: "rgba(10, 10, 20, .42)"
 
   # ---------- card-mod: frosted glass and micro-interactions on every card ----------
   # Cards rise in when a view opens (staggered when a card sets --lumen-i), lift a little on
@@ -190,8 +222,8 @@ Lumen:
     @media (hover: hover) {
       :host(:not(.type-heading):not(.type-custom-mushroom-title-card):not(.type-custom-mushroom-chips-card)) ha-card:not(.navbar-card):hover {
         translate: 0 -2px;
-        border-color: color-mix(in srgb, var(--primary-text-color) 16%, transparent);
-        box-shadow: 0 22px 44px -18px rgba(0, 0, 0, .5);
+        border-color: var(--lumen-card-border-hover, color-mix(in srgb, var(--primary-text-color) 16%, transparent));
+        box-shadow: var(--lumen-card-shadow-hover, 0 22px 44px -18px rgba(0, 0, 0, .5));
       }
       ha-card:hover ha-tile-icon, ha-card:hover mushroom-shape-icon { scale: 1.08; }
     }
