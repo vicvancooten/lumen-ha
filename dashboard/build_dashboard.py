@@ -1601,23 +1601,28 @@ def scenes_section(r):
     lit = lights_on(lights)[3:-3] + " > 0" if lights else "true"
     latest = ("{% set ts = " + json.dumps(ids_) + " | map('states') | reject('in', ['unknown', 'unavailable']) "
               "| list %}{% set latest = ts | max if ts else '' %}")
-    cols = max(4, min(12, 36 // (len(scenes) + (1 if lights else 0))))
+    n_cards = len(scenes) + (1 if lights else 0)
+    # One row across on wide screens; three to a row on phones, where a section is 12 columns wide.
+    variants = [(max(4, min(12, 36 // n_cards)), "(min-width: 768px)"), (4, "(max-width: 767px)")]
     cards = [heading("Scenes", "mdi:palette-outline")]
-    for s in scenes:
-        style = (GLASS + latest + f"{{% if {lit} and states('{s['entity']}') == latest %}}" + SCENE_ON_STYLE
-                 + "{% endif %}")
-        cards.append({**tile(s["entity"], cols, vertical=True, name=s.get("name"), icon=s.get("icon", "mdi:palette"),
-                             color=s.get("color", "deep-purple"), hide_state=True, tap=scene_tap(s["entity"])),
-                      "_style": "plain", "card_mod": {"style": style}})
-    if lights:
-        n = lights_on(lights)[3:-3]
-        cards.append({"type": "custom:mushroom-template-card", "primary": "All off", "vertical": True,
-                      "icon": "mdi:lightbulb-off-outline",
-                      "secondary": f"{{% set n = {n} %}}{{{{ 'Everything off' if n == 0 else n ~ ' on' }}}}",
-                      "icon_color": f"{{{{ 'disabled' if {n} == 0 else 'red' }}}}",
-                      "tap_action": {"action": "perform-action", "perform_action": "light.turn_off",
-                                     "target": {"entity_id": lights}, "data": {"transition": 3}},
-                      **grid(cols)})
+    for cols, query in variants:
+        screen = [{"condition": "screen", "media_query": query}]
+        for s in scenes:
+            style = (GLASS + latest + f"{{% if {lit} and states('{s['entity']}') == latest %}}" + SCENE_ON_STYLE
+                     + "{% endif %}")
+            cards.append({**tile(s["entity"], cols, vertical=True, name=s.get("name"),
+                                 icon=s.get("icon", "mdi:palette"), color=s.get("color", "deep-purple"),
+                                 hide_state=True, tap=scene_tap(s["entity"])),
+                          "_style": "plain", "card_mod": {"style": style}, "visibility": screen})
+        if lights:
+            n = lights_on(lights)[3:-3]
+            cards.append({"type": "custom:mushroom-template-card", "primary": "All off", "vertical": True,
+                          "icon": "mdi:lightbulb-off-outline",
+                          "secondary": f"{{% set n = {n} %}}{{{{ 'Everything off' if n == 0 else n ~ ' on' }}}}",
+                          "icon_color": f"{{{{ 'disabled' if {n} == 0 else 'red' }}}}",
+                          "tap_action": {"action": "perform-action", "perform_action": "light.turn_off",
+                                         "target": {"entity_id": lights}, "data": {"transition": 3}},
+                          "visibility": screen, **grid(cols)})
     return section(cards, span=3)
 
 
