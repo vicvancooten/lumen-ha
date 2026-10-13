@@ -31,6 +31,7 @@ FLOORS = []
 ROOMS = {}
 STATES = {}
 URL_PATH = "home-dashboard"
+CFG_DIR = "."
 
 
 # --------------------------------------------------------------------------------------
@@ -825,7 +826,7 @@ def home_view(areas_by_floor):
         sections.append(section(cards))
 
     if CFG.get("birdnet"):
-        sections.append(section(birdnet_cards(CFG["birdnet"])))
+        sections.append(section(birdnet_cards(CFG["birdnet"]), span=3))
 
     for f in FLOORS:
         rooms = [a for a in areas_by_floor[f["id"]] if a in ROOMS]
@@ -838,10 +839,11 @@ def home_view(areas_by_floor):
 
 
 def birdnet_cards(b):
-    """Home-page block for BirdNET-Go: the last bird heard, plus today's tallies."""
+    """Home-page block (a full-width section): the garden camera with the last bird heard laid over it,
+    and today's tallies beside it. Without `camera`, the last bird is a card of its own."""
     last, photo, tap = b["last_bird"], b.get("photo"), b.get("tap_path")
     none = f"states('{last}') in ('unknown', 'unavailable', 'none')"
-    card = {
+    bird = {
         "type": "custom:mushroom-template-card", "entity": last, "layout": "horizontal",
         "icon": "mdi:bird", "icon_color": "teal",
         "primary": f"{{{{ 'No birds heard yet' if {none} else states('{last}') }}}}",
@@ -851,21 +853,47 @@ def birdnet_cards(b):
                       "{% else %}Listening…{% endif %}"),
         "badge_icon": f"{{{{ 'mdi:star-circle' if state_attr('{last}', 'isNewSpecies') else '' }}}}",
         "badge_color": "amber",
-        **grid(12),
+        "tap_action": {"action": "navigate", "navigation_path": tap} if tap else {"action": "more-info"},
     }
     if photo:
-        card["picture"] = f"{{{{ state_attr('{photo}', 'entity_picture') }}}}"
-    if tap:
-        card["tap_action"] = {"action": "navigate", "navigation_path": tap}
+        bird["picture"] = f"{{{{ state_attr('{photo}', 'entity_picture') }}}}"
+
+    camera = b.get("camera")
+    if camera:
+        def pinned(card, **edges):
+            # picture-elements positions an element from its centre; pin to the edges instead.
+            return {**card, "style": {"top": "auto", "bottom": "auto", "left": "auto", "right": "auto",
+                                      "transform": "none", **edges}}
+        live = {"type": "custom:mushroom-chips-card", "alignment": "start",
+                "chips": [{"type": "template", "icon": "mdi:circle", "icon_color": "red", "content": "Live"}]}
+        left = {"type": "picture-elements", "camera_image": camera, "camera_view": "live",
+                "aspect_ratio": "16:9", **grid(24),
+                "elements": [
+                    pinned(live, top="12px", left="12px"),
+                    {"type": "icon", "icon": "mdi:arrow-expand", "entity": camera, "tap_action": {"action": "more-info"},
+                     "style": {"top": "26px", "right": "26px", "color": "#fff", "--mdc-icon-size": "26px",
+                               "filter": "drop-shadow(0 1px 4px rgba(0,0,0,.6))"}},
+                    pinned(bird, bottom="12px", left="12px", right="12px"),
+                ]}
     else:
-        card["tap_action"] = {"action": "more-info"}
-    cards = [heading(b.get("title", "Birds"), "mdi:bird", tap=tap), card]
+        left = {**bird, **grid(24)}
+
+    side = []
+    if photo and camera:
+        side.append({"type": "picture-entity", "entity": photo, "show_name": False, "show_state": False,
+                     "aspect_ratio": "5:2", "fit_mode": "cover", "tap_action": bird["tap_action"]})
     if b.get("species_today"):
-        cards.append(tile(b["species_today"], 6, name="Species today", icon="mdi:feather", color="teal", vertical=True))
+        side.append(tile(b["species_today"], 12, name="Species today", icon="mdi:feather", color="teal"))
     if b.get("detections_today"):
-        cards.append(tile(b["detections_today"], 6, name="Detections", icon="mdi:microphone", color="cyan", vertical=True))
+        side.append(tile(b["detections_today"], 12, name="Detections", icon="mdi:microphone", color="cyan"))
     if b.get("top_bird"):
-        cards.append(tile(b["top_bird"], 12, name="Most heard today", icon="mdi:trophy-outline", color="amber"))
+        side.append(tile(b["top_bird"], 12, name="Most heard today", icon="mdi:trophy-outline", color="amber"))
+    side += [tile_from(t, 12) for t in b.get("extra_tiles", [])]
+    for t in side:
+        t.pop("grid_options", None)
+    cards = [heading(b.get("title", "Birds"), "mdi:bird", tap=b.get("camera_page") or tap), left]
+    if side:
+        cards.append({"type": "vertical-stack", "cards": side, **grid(12)})
     return cards
 
 
@@ -1068,7 +1096,8 @@ def room_view(area_id, r, floor):
 
 # --------------------------------------------------------------------------------------
 def load_config(path):
-    global CFG, FLOORS, ROOMS, URL_PATH
+    global CFG, FLOORS, ROOMS, URL_PATH, CFG_DIR
+    CFG_DIR = os.path.dirname(os.path.abspath(path))
     with open(path) as fh:
         CFG = yaml.safe_load(fh)
     FLOORS = CFG["floors"]
@@ -1077,6 +1106,26 @@ def load_config(path):
     for area_id, room in ROOMS.items():
         room.setdefault("name", area_id.replace("_", " ").capitalize())
         room.setdefault("path", area_id.replace("_", "-"))
+
+
+def apply_overlay(views):
+    """Merge hand-made Lovelace into the generated views. `overlay:` names a JSON file with
+    `views` (whole views, without the header section; they replace a generated view with the
+    same path, or are added) and `sections` ({view, index, section}; inserted before the header
+    is added, so index 0 is the first section under it)."""
+    name = CFG.get("overlay")
+    if not name:
+        return
+    with open(os.path.join(CFG_DIR, os.path.expanduser(name))) as fh:
+        overlay = json.load(fh)
+    for v in overlay.get("views", []):
+        views[:] = [x for x in views if x["path"] != v["path"]] + [v]
+    by_path = {v["path"]: v for v in views}
+    for item in sorted(overlay.get("sections", []), key=lambda i: (i["view"], i["index"])):
+        if item["view"] not in by_path:
+            print(f"WARNING: overlay section for unknown view {item['view']!r}")
+            continue
+        by_path[item["view"]]["sections"].insert(item["index"], item["section"])
 
 
 def connect():
@@ -1130,6 +1179,8 @@ def main():
     views += [floor_view(f, areas_by_floor) for f in FLOORS]
     views += [room_view(a, ROOMS[a], floor_by_id[ROOMS[a]["floor"]])
               for f in FLOORS for a in areas_by_floor[f["id"]] if a in ROOMS]
+
+    apply_overlay(views)
 
     unknown = sorted(set(ROOMS) - {a["area_id"] for a in areas})
     if unknown:

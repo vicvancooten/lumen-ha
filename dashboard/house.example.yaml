@@ -50,13 +50,21 @@ energy:                      # optional
     - {entity: sensor.grid_fossil_percentage, name: Fossil grid, icon: mdi:factory, color: blue-grey}
 
 birdnet:                     # optional: BirdNET-Go block on the home page (sensors: ../ha/birdnet_go.yaml)
-  title: Garden birds
+  title: Garden
   last_bird: sensor.birdnet_go_last_bird
   photo: image.birdnet_go_last_bird_photo
   species_today: sensor.birdnet_go_species_today
   detections_today: sensor.birdnet_go_detections_today
   top_bird: sensor.birdnet_go_top_bird_today
-  tap_path: /hassio/ingress/db21ed7f_birdnet-go    # where tapping the block goes (the add-on's UI)
+  tap_path: /hassio/ingress/db21ed7f_birdnet-go    # where tapping the bird goes (the add-on's UI)
+  camera: camera.garden                            # optional: live camera with the last bird laid over it
+  camera_page: /home-dashboard/cameras             # optional: where the block's heading goes
+  extra_tiles:                                     # optional: more tiles beside the camera
+    - {entity: light.garden, name: Garden light, color: amber}
+
+# overlay: overlay.json      # optional: hand-made views and sections merged into the generated dashboard
+#   (JSON: {"views": [<whole view, no header section>], "sections": [{"view": "garden", "index": 1, "section": {...}}]}
+#    `index` counts from the first section under the header. A view with an existing path replaces it.)
 
 # haunted:                   # optional: now and then, hair creeps out of a corner of a room photo
 #   every: 100               # average seconds between appearances, per room (randomised 50-150%)

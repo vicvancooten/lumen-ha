@@ -119,6 +119,16 @@ and the most-heard bird.
    BirdNET-Go's API, so no MQTT broker is needed.
 2. Add the `birdnet:` section from `house.example.yaml` to your `house.yaml` and regenerate.
 
+With `camera:` set, the block becomes a full-width hero: the live camera with the last bird (photo,
+confidence, time ago) laid over it, and a column beside it with the bird's photo, today's tallies and
+any `extra_tiles`.
+
+### Keeping hand-made pages (optional)
+
+Regenerating replaces the whole dashboard, so anything added in the HA editor is lost. Export what you
+want to keep to a JSON file and name it under `overlay:` in `house.yaml`: whole views (e.g. a Cameras
+page) and sections inserted into generated views. See `house.example.yaml` for the format.
+
 ### Using the dashboard
 
 - **Bottom bar:** Home, one tab per floor, and **More** (Edit dashboard, Energy, History, Map,
