@@ -108,6 +108,17 @@ You also need Python 3.10+ on any machine that can reach Home Assistant.
    The generator creates the dashboard if it doesn't exist yet and adds the Inter font as a dashboard
    resource. Re-run it whenever you add devices or rooms.
 
+### BirdNET-Go (optional)
+
+If you run [BirdNET-Go](https://github.com/tphakala/birdnet-go) (e.g. as a Home Assistant app), the home
+page can show the last bird heard, with its photo and confidence, plus today's species and detection counts
+and the most-heard bird.
+
+1. Copy `ha/birdnet_go.yaml` to `/config/packages/birdnet_go.yaml` (see the comments in the file for the
+   `packages:` line and the host to edit), and restart Home Assistant. It uses plain REST sensors against
+   BirdNET-Go's API, so no MQTT broker is needed.
+2. Add the `birdnet:` section from `house.example.yaml` to your `house.yaml` and regenerate.
+
 ### Using the dashboard
 
 - **Bottom bar:** Home, one tab per floor, and **More** (Edit dashboard, Energy, History, Map,

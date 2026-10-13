@@ -824,6 +824,9 @@ def home_view(areas_by_floor):
         cards += [tile_from(t, 6) for t in energy.get("tiles", [])]
         sections.append(section(cards))
 
+    if CFG.get("birdnet"):
+        sections.append(section(birdnet_cards(CFG["birdnet"])))
+
     for f in FLOORS:
         rooms = [a for a in areas_by_floor[f["id"]] if a in ROOMS]
         cards = [heading(f["name"], f["icon"], tap=f"/{URL_PATH}/{f['path']}")]
@@ -832,6 +835,38 @@ def home_view(areas_by_floor):
 
     return {"title": "Home", "path": "home", "icon": "mdi:home-heart", "type": "sections",
             "max_columns": 3, "dense_section_placement": True, "sections": sections}
+
+
+def birdnet_cards(b):
+    """Home-page block for BirdNET-Go: the last bird heard, plus today's tallies."""
+    last, photo, tap = b["last_bird"], b.get("photo"), b.get("tap_path")
+    none = f"states('{last}') in ('unknown', 'unavailable', 'none')"
+    card = {
+        "type": "custom:mushroom-template-card", "entity": last, "layout": "horizontal",
+        "icon": "mdi:bird", "icon_color": "teal",
+        "primary": f"{{{{ 'No birds heard yet' if {none} else states('{last}') }}}}",
+        "secondary": (f"{{% set c = state_attr('{last}', 'confidence') %}}"
+                      f"{{% set t = state_attr('{last}', 'timestamp') %}}"
+                      "{% if c and t %}{{ (c * 100) | round(0) | int }}% · {{ relative_time(as_datetime(t)) }} ago"
+                      "{% else %}Listening…{% endif %}"),
+        "badge_icon": f"{{{{ 'mdi:star-circle' if state_attr('{last}', 'isNewSpecies') else '' }}}}",
+        "badge_color": "amber",
+        **grid(12),
+    }
+    if photo:
+        card["picture"] = f"{{{{ state_attr('{photo}', 'entity_picture') }}}}"
+    if tap:
+        card["tap_action"] = {"action": "navigate", "navigation_path": tap}
+    else:
+        card["tap_action"] = {"action": "more-info"}
+    cards = [heading(b.get("title", "Birds"), "mdi:bird", tap=tap), card]
+    if b.get("species_today"):
+        cards.append(tile(b["species_today"], 6, name="Species today", icon="mdi:feather", color="teal", vertical=True))
+    if b.get("detections_today"):
+        cards.append(tile(b["detections_today"], 6, name="Detections", icon="mdi:microphone", color="cyan", vertical=True))
+    if b.get("top_bird"):
+        cards.append(tile(b["top_bird"], 12, name="Most heard today", icon="mdi:trophy-outline", color="amber"))
+    return cards
 
 
 def floor_view(f, areas_by_floor):
@@ -1101,7 +1136,9 @@ def main():
         print("WARNING: rooms with no matching HA area:", unknown)
     missing = sorted({e for r in ROOMS.values()
                       for k in ("lights", "media", "motion", "batteries", "automations", "power", "contacts")
-                      for e in ids(r.get(k)) if e not in STATES})
+                      for e in ids(r.get(k)) if e not in STATES}
+                     | {e for k in ("last_bird", "photo", "species_today", "detections_today", "top_bird")
+                        for e in [CFG.get("birdnet", {}).get(k)] if e and e not in STATES})
     if missing:
         print("WARNING: entities not found in Home Assistant:", missing)
 

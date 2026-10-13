@@ -49,6 +49,15 @@ energy:                      # optional
     - {entity: sensor.gas_consumption, name: Gas, icon: mdi:fire, color: deep-orange}
     - {entity: sensor.grid_fossil_percentage, name: Fossil grid, icon: mdi:factory, color: blue-grey}
 
+birdnet:                     # optional: BirdNET-Go block on the home page (sensors: ../ha/birdnet_go.yaml)
+  title: Garden birds
+  last_bird: sensor.birdnet_go_last_bird
+  photo: image.birdnet_go_last_bird_photo
+  species_today: sensor.birdnet_go_species_today
+  detections_today: sensor.birdnet_go_detections_today
+  top_bird: sensor.birdnet_go_top_bird_today
+  tap_path: /hassio/ingress/db21ed7f_birdnet-go    # where tapping the block goes (the add-on's UI)
+
 # haunted:                   # optional: now and then, hair creeps out of a corner of a room photo
 #   every: 100               # average seconds between appearances, per room (randomised 50-150%)
 #   duration: 1              # seconds it stays visible

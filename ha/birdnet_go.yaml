@@ -1,0 +1,59 @@
+# BirdNET-Go for Home Assistant: sensors for the Lumen home page.
+#
+# BirdNET-Go's API is open on the LAN, so plain REST sensors are enough: no MQTT broker needed.
+# Install: save this as /config/packages/birdnet_go.yaml and make sure configuration.yaml has
+#
+#   homeassistant:
+#     packages: !include_dir_named packages
+#
+# (or paste the two top-level blocks below into configuration.yaml), then restart Home Assistant.
+# Change the host if BirdNET-Go isn't on 192.168.5.5:8080. From Home Assistant itself the add-on is
+# also reachable as http://db21ed7f-birdnet-go:8080 (the slug hash is shown on the add-on's page).
+#
+# Entities created:
+#   sensor.birdnet_go_last_bird          state = species; attributes confidence, timestamp, scientificName, ...
+#   image.birdnet_go_last_bird_photo     photo of that species, proxied through HA (works over https)
+#   sensor.birdnet_go_species_today      distinct species heard today
+#   sensor.birdnet_go_detections_today   detections today
+#   sensor.birdnet_go_top_bird_today     most-heard species today
+
+rest:
+  - resource: http://192.168.5.5:8080/api/v2/detections/recent?limit=1
+    scan_interval: 60
+    sensor:
+      - name: BirdNET-Go last bird
+        unique_id: birdnet_go_last_bird
+        icon: mdi:bird
+        value_template: "{{ value_json[0].commonName if value_json | length else 'none' }}"
+        json_attributes_path: "$[0]"
+        json_attributes: [scientificName, confidence, timestamp, isNewSpecies, isNewThisYear]
+
+  - resource: http://192.168.5.5:8080/api/v2/analytics/species/daily
+    scan_interval: 120
+    sensor:
+      - name: BirdNET-Go species today
+        unique_id: birdnet_go_species_today
+        icon: mdi:feather
+        state_class: measurement
+        unit_of_measurement: species
+        value_template: "{{ value_json | length }}"
+      - name: BirdNET-Go detections today
+        unique_id: birdnet_go_detections_today
+        icon: mdi:microphone
+        state_class: measurement
+        unit_of_measurement: detections
+        value_template: "{{ value_json | sum(attribute='count') }}"
+      - name: BirdNET-Go top bird today
+        unique_id: birdnet_go_top_bird_today
+        icon: mdi:trophy-outline
+        value_template: >-
+          {% set top = value_json | sort(attribute='count', reverse=true) | first | default(none) %}
+          {{ top.common_name if top else 'none' }}
+
+template:
+  - image:
+      - name: BirdNET-Go last bird photo
+        unique_id: birdnet_go_last_bird_photo
+        url: >-
+          http://192.168.5.5:8080/api/v2/media/image/{{ state_attr('sensor.birdnet_go_last_bird', 'scientificName') | urlencode }}
+        availability: "{{ state_attr('sensor.birdnet_go_last_bird', 'scientificName') is string }}"
