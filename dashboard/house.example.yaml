@@ -70,20 +70,21 @@ energy:                      # optional; the heading and power graph open the En
     - {entity: sensor.electricity_tariff, icon: mdi:clock-outline}
     - {entity: sensor.co2_intensity, icon: mdi:leaf, color: green}
 
-media:                       # optional: the TV and the music, big and visual: "Now playing" on the home page
-                             # while something's on, a Media page, and the player on the room's page.
-                             # Needs the yet-another-media-player card (HACS); music via Music Assistant.
-  room: living_room          # the room page that gets the big player
+media:                       # optional: "Now playing" on the home page while something's on (what's playing,
+                             # volume, a remote pad), a Media page with the full remote and the music, and
+                             # the same on the room's page. Music via Music Assistant and the
+                             # yet-another-media-player card (HACS).
+  room: living_room          # the room page that gets the player and remote
   tv:
     name: TV
     entity: media_player.living_room_tv       # what's playing: title, artwork, play/pause (e.g. Google Cast)
     power: media_player.living_room_tv_remote # optional: power button (e.g. Android TV Remote)
     remote: remote.living_room_tv             # optional: remote pad, app shortcuts
+    # remote_keys: {up: CursorUp, select: Confirm}   # optional: key names, if not Android TV Remote's (DPAD_UP...)
     volume: media_player.soundbar             # optional: when the TV's sound goes through other speakers
     live_tv: {entity: media_player.tv, source: Watch TV}   # optional: a Live TV shortcut
     apps:                                     # optional: app shortcuts (remote.turn_on activity)
       - {name: YouTube, icon: mdi:youtube, activity: https://www.youtube.com}
-      - {name: Netflix, icon: mdi:netflix, activity: https://www.netflix.com/title}
   players:                   # music players (Music Assistant entities: search, favourites, radio)
     - {entity: media_player.living_room_speakers, name: Living room}
     - {entity: media_player.bedroom_speakers, name: Bedroom}

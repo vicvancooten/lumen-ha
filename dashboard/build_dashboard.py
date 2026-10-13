@@ -915,7 +915,7 @@ def home_view(areas_by_floor):
 
     media = CFG.get("media")
     if media:
-        playing = section(media_hero(media), span=3)
+        playing = section(now_playing(media), span=3)
         playing["visibility"] = media_on(media)
         sections.append(playing)
 
@@ -1311,11 +1311,16 @@ APEX_STYLE = """
 ha-card { padding: 4px 4px 2px; }
 #header { padding: 12px 12px 0 !important; }
 #header__title { font-size: 16px !important; font-weight: 400 !important; opacity: .7; padding-bottom: 2px; }
-#header__states { gap: 18px; justify-content: flex-start !important; }
+#header__states { gap: 18px; justify-content: flex-start !important; flex-wrap: nowrap !important; }
 #states__state { padding: 0 !important; }
 #state__value { font-size: 26px !important; font-weight: 400 !important; letter-spacing: -.01em; }
 #state__value #uom { font-size: 13px !important; font-weight: 500 !important; opacity: .7; }
 #state__name { font-size: 11px !important; opacity: .6 !important; text-transform: uppercase; letter-spacing: .06em; }
+/* Phones: three totals still fit on one line. */
+@media (max-width: 600px) {
+  #header__states { gap: 12px; }
+  #state__value { font-size: 19px !important; }
+}
 """
 
 
@@ -1337,20 +1342,27 @@ def usage_series(e, period="hour", area=True):
              "statistics": {"type": "change", "period": period, "align": "start"}}]
 
 
-def totals_header(e, title):
-    """Today's electricity and gas, large in the chart header (needs daily utility meters in `today`)."""
-    t = e.get("today") or {}
+def totals_header(e, title, now=False):
+    """Today's electricity and gas, large in the chart header (needs daily utility meters in `today`), and
+    with `now` the power right now."""
+    t = dict(e.get("today") or {})
+    if now:
+        t["now"] = e["graph"]
     series = [{"entity": t[k], "name": name, "color": col, "unit": unit, "float_precision": prec,
                "show": {"in_chart": False, "in_header": True}}
               for k, name, col, unit, prec in (("electricity", "Electricity", ELECTRIC_COLOR, " kWh", 1),
-                                               ("gas", "Gas", GAS_COLOR, " m³", 2)) if t.get(k)]
+                                               ("gas", "Gas", GAS_COLOR, " m³", 2),
+                                               ("now", "Now", ELECTRIC_COLOR,
+                                                " " + e.get("power_unit", "kW"), 2)) if t.get(k)]
     return series, {"show": True, "title": title, "show_states": bool(series), "colorize_states": False}
 
 
 # The AI's story, quietly: a plain card, the icon says how the day went.
 INSIGHT_STYLE = """
 .row, .content { height: auto !important; align-items: flex-start !important; }
-ha-tile-info { padding: 4px 0; }
+.content { padding: 14px 18px 16px 14px !important; gap: 12px; }
+ha-tile-icon { margin: 0 !important; }
+ha-tile-info { padding: 7px 0 0; }
 span[slot=primary] { white-space: normal !important; font-size: 15px !important; line-height: 1.35 !important; }
 span[slot=secondary] { white-space: normal !important; line-height: 1.5 !important; margin-top: 4px; }
 """
@@ -1378,21 +1390,22 @@ def insight_card(text, title=None, icon="mdi:creation", color="amber", tap=None,
 
 
 def energy_cards(e):
-    """Home page: today's power curve and hour-by-hour use (both open the Energy dashboard), and the AI's
-    verdict on the day, which opens the Energy page."""
+    """Home page: today hour by hour (with power right now in the header; both open the Energy dashboard),
+    and the AI's verdict on the day, which opens the Energy page. Without gas, the power curve instead."""
     dash = e.get("dashboard", "/energy")
     cards = [heading("Energy", "mdi:lightning-bolt", tap=dash,
                      badges=[badge(b["entity"], b.get("color"), icon=b.get("icon"),
                                    tap_action=nav(dash)) for b in ents(e.get("badges"))])]
-    if e.get("graph"):
+    hourly = e.get("graph") and e.get("gas")
+    if e.get("graph") and not hourly:
         cards.append(mini_graph(
             [(e["graph"], "Power", "#f7b731")], name="Power today", hours=24, height=120,
             show={"fill": "fade", "labels": False, "legend": False, "extrema": True, "icon": False},
             color_thresholds=[{"value": 0, "color": "#20bf6b"}, {"value": 0.8, "color": "#f7b731"},
                               {"value": 2, "color": "#eb3b5a"}],
             tap_action={"action": "navigate", "navigation_path": dash}))
-    if e.get("graph") and e.get("gas"):
-        totals, head = totals_header(e, "Today, hour by hour")
+    if hourly:
+        totals, head = totals_header(e, "Today, hour by hour", now=True)
         cards.append(apex(usage_series(e) + totals, height=120, header=head))
     ins = e.get("insight")
     if ins:
@@ -1458,7 +1471,8 @@ def energy_view(e):
 
 
 # --------------------------------------------------------------------------------------
-# Media: the TV and the music, big and visual (Yet Another Media Player + Music Assistant)
+# Media: the TV as Lumen cards (artwork, play/pause, volume, a remote pad); the music through Music
+# Assistant on the Media page (Yet Another Media Player: search, favourites, radio)
 # --------------------------------------------------------------------------------------
 def media_path():
     return f"/{URL_PATH}/media"
@@ -1487,49 +1501,131 @@ MEDIA_FALLBACK_ART = "data:image/svg+xml;utf8," + urllib.parse.quote(
     "<rect width='800' height='500' fill='url(#a)'/><rect width='800' height='500' fill='url(#b)'/>"
     "<rect width='800' height='500' fill='url(#c)'/></svg>")
 
+# Android TV Remote key names (remote.send_command); override per key with `remote_keys` for other remotes.
+REMOTE_KEYS = {"up": "DPAD_UP", "down": "DPAD_DOWN", "left": "DPAD_LEFT", "right": "DPAD_RIGHT",
+               "select": "DPAD_CENTER", "back": "BACK", "home": "HOME", "menu": "MENU"}
+# Apps that send no artwork still get recognised: their icon and colour stand in for the picture.
+APP_ICONS = {"youtube": ("mdi:youtube", "red"), "netflix": ("mdi:netflix", "red"),
+             "spotify": ("mdi:spotify", "green"), "plex": ("mdi:plex", "amber"), "kodi": ("mdi:kodi", "blue")}
+PLAYBACK = ["media_previous_track", "media_play_pause", "media_next_track"]
+PAD_STYLE = """
+ha-card { border-radius: 20px !important; height: 56px; justify-content: center; padding: 0 !important; }
+ha-card:active { scale: .94; transition: scale .1s; }
+"""
+
 
 def media_on(m):
     """Visibility: the TV is on, or one of the music players is playing."""
     tv = m.get("tv") or {}
-    conds = [{"condition": "state", "entity": tv.get("power", tv.get("entity")), "state": "on"}] if tv else []
+    conds = [tv_on(tv)] if tv else []
     conds += [{"condition": "state", "entity": p["entity"], "state": "playing"} for p in ents(m.get("players"))]
     return [{"condition": "or", "conditions": conds}]
 
 
-def yamp_entities(m, music=True, tv=True):
-    """The card's chips: the TV first (sound through the speakers it's synced to), then the music players."""
+def tv_on(t):
+    return {"condition": "state", "entity": t.get("power", t["entity"]), "state": "on"}
+
+
+def player_card(entity, name, cols, rows=None, volume=False, tap=None):
+    """What's playing on a Lumen card: the artwork (or the app's icon), title and artist, play/pause."""
+    a = lambda k: f"state_attr('{entity}', '{k}')"
+    app = f"({a('app_name')} or '') | lower"
+    icons = "{%s}" % ", ".join(f"'{k}': '{v[0]}'" for k, v in APP_ICONS.items())
+    colors = "{%s}" % ", ".join(f"'{k}': '{v[1]}'" for k, v in APP_ICONS.items())
+    # Power lives on the remote pad; here just previous, play/pause and next.
+    feats = [{"type": "media-player-playback", "controls": PLAYBACK}] + \
+        ([{"type": "media-player-volume-slider"}] if volume else [])
+    return {"type": "custom:mushroom-template-card", "entity": entity,
+            "primary": "{{ %s or %s or '%s' }}" % (a("media_title"), a("app_name"), name),
+            "secondary": ("{{ [%s, %s if %s else '%s'] | select | join(' · ') }}"
+                          % (a("media_artist"), a("app_name"), a("media_title"), name)),
+            "picture": "{{ %s or '' }}" % a("entity_picture"),
+            "icon": "{{ %s.get(%s, 'mdi:play-circle-outline') }}" % (icons, app),
+            "icon_color": "{{ %s.get(%s, 'pink') }}" % (colors, app),
+            "features": feats, "features_position": "bottom",
+            "tap_action": tap or {"action": "more-info"}, **grid(cols, rows)}
+
+
+def pad_button(icon, tap):
+    return {"type": "button", "icon": icon, "show_name": False, "show_state": False, "icon_height": "22px",
+            "tap_action": tap, "hold_action": {"action": "none"}, "_style": "plain",
+            "card_mod": {"style": GLASS + PAD_STYLE}}
+
+
+def remote_pad(t, corner, cols):
+    """One card, three rows of three: back, up, home / left, OK, right / power, down and `corner`."""
+    keys = {**REMOTE_KEYS, **t.get("remote_keys", {})}
+    key = lambda k, icon: pad_button(icon, {"action": "perform-action", "perform_action": "remote.send_command",
+                                            "target": {"entity_id": t["remote"]}, "data": {"command": keys[k]}})
+    power = ({"action": "perform-action", "perform_action": "media_player.toggle",
+              "target": {"entity_id": t["power"]}} if t.get("power") else
+             {"action": "perform-action", "perform_action": "remote.toggle", "target": {"entity_id": t["remote"]}})
+    buttons = [key("back", "mdi:arrow-left"), key("up", "mdi:chevron-up"), key("home", "mdi:home-outline"),
+               key("left", "mdi:chevron-left"), key("select", "mdi:circle-outline"), key("right", "mdi:chevron-right"),
+               pad_button("mdi:power", power), key("down", "mdi:chevron-down"), corner]
+    return {"type": "grid", "columns": 3, "square": False, "cards": buttons, **grid(cols, 3)}
+
+
+def tv_cards(m, wide, full=False):
+    """The TV: what's on with play/pause, the volume of whatever plays the sound, and the remote pad. Wide
+    (a three-column section) puts the pad beside the player; narrow stacks them. On the home page the pad's
+    corner button opens the Media page; on the Media page itself it's the TV's menu key."""
+    t = m["tv"]
+    name = t.get("name", "TV")
+    player = player_card(t["entity"], name, 24 if wide else 12, 2, tap=nav(media_path()) if not full else None)
+    volume = tile(t.get("volume", t["entity"]), 24 if wide else 12, name="Volume", icon="mdi:volume-high",
+                  color="primary", hide_state=True, features=[{"type": "media-player-volume-slider"}])
+    volume["features_position"] = "inline"
+    if not t.get("remote"):
+        return [player, volume]
+    corner = (pad_button("mdi:menu", {"action": "perform-action", "perform_action": "remote.send_command",
+                                      "target": {"entity_id": t["remote"]},
+                                      "data": {"command": {**REMOTE_KEYS, **t.get("remote_keys", {})}["menu"]}})
+              if full else pad_button("mdi:dots-horizontal", nav(media_path())))
+    # In this order the section's grid tucks the pad in beside the player and the volume.
+    return [player, remote_pad(t, corner, 12), volume]
+
+
+def music_cards(m, cols):
+    """A card per music player, shown while it plays."""
     out = []
-    t = m.get("tv")
-    if tv and t:
-        out.append({k: v for k, v in {
-            "entity_id": t["entity"], "name": t.get("name", "TV"), "volume_entity": t.get("volume"),
-            "remote_entity": t.get("remote"), "hidden_controls": ["power", "shuffle", "repeat", "favorite"],
-        }.items() if v})
-    if music:
-        for pl in ents(m.get("players")):
-            out.append({"entity_id": pl["entity"], "name": pl.get("name"),
-                        "music_assistant_entity": pl.get("music_assistant", pl["entity"])})
+    for p in ents(m.get("players")):
+        c = player_card(p["entity"], p.get("name", friendly(p["entity"])), cols, volume=True, tap=nav(media_path()))
+        c["visibility"] = [{"condition": "state", "entity": p["entity"], "state": "playing"}]
+        out.append(c)
     return out
 
 
-def yamp_actions(m):
-    """App shortcuts on the TV's remote, live TV, the power button, and search for the music."""
+def now_playing(m, wide=True):
+    """The home page's 'now playing': the TV with its remote while it's on, and any music that's playing."""
+    cards = [heading("Now playing", "mdi:play-circle-outline", tap=media_path())]
+    if m.get("tv"):
+        for c in tv_cards(m, wide):
+            c["visibility"] = [tv_on(m["tv"])]
+            cards.append(c)
+    return cards + music_cards(m, 36 if wide else 12)
+
+
+def app_tiles(m):
+    """App shortcuts on the TV's remote, and live TV."""
     t = m.get("tv") or {}
-    acts = []
-    if t.get("power"):
-        acts.append({"name": "Power", "icon": "mdi:power", "placement": "replace_power",
-                     "service": "media_player.toggle", "service_data": {"entity_id": t["power"]}})
-    for a in t.get("apps", []):
-        acts.append({"name": a["name"], "icon": a.get("icon", "mdi:application"),
-                     "service": "remote.turn_on",
-                     "service_data": {"entity_id": t["remote"], "activity": a["activity"]}})
+    out = [tile(t["remote"], 12, name=a["name"], icon=a.get("icon", "mdi:application"), color="red",
+                hide_state=True, tap={"action": "perform-action", "perform_action": "remote.turn_on",
+                                      "target": {"entity_id": t["remote"]}, "data": {"activity": a["activity"]}})
+           for a in t.get("apps", []) if t.get("remote")]
     lt = t.get("live_tv")
     if lt:
-        acts.append({"name": "Live TV", "icon": "mdi:television-classic", "service": "media_player.select_source",
-                     "service_data": {"entity_id": lt["entity"], "source": lt.get("source", "Watch TV")}})
-    if m.get("players"):
-        acts.append({"name": "Music", "icon": "mdi:music-circle-outline", "menu_item": "search"})
-    return acts
+        out.append(tile(lt["entity"], 12, name="Live TV", icon="mdi:television-classic", color="blue",
+                        hide_state=True, tap={"action": "perform-action", "perform_action": "media_player.select_source",
+                                              "target": {"entity_id": lt["entity"]},
+                                              "data": {"source": lt.get("source", "Watch TV")}}))
+    return out
+
+
+def yamp_entities(m):
+    """The music players as the card's chips."""
+    return [{"entity_id": pl["entity"], "name": pl.get("name"),
+             "music_assistant_entity": pl.get("music_assistant", pl["entity"])} for pl in ents(m.get("players"))]
 
 
 def yamp(entities, cols=24, height=380, actions=None, **extra):
@@ -1542,8 +1638,8 @@ def yamp(entities, cols=24, height=380, actions=None, **extra):
          "volume_mode": "slider", "_style": "plain", "card_mod": {"style": GLASS + MEDIA_STYLE},
          "media_artwork_overrides": [{"missing_art_url": MEDIA_FALLBACK_ART}], "idle_image": MEDIA_FALLBACK_ART,
          **grid(cols, rows="auto")}
-    if extra.get("card_type") == "remote_control" or extra.get("template") == "dedicated_search":
-        # Pure controls: no artwork placeholder or fade behind the pad and the list.
+    if extra.get("template") == "dedicated_search":
+        # Just the list: no artwork placeholder or fade behind it.
         c.update(artwork_object_fit="no_artwork", show_chip_row="auto", disable_artwork_gradient=True)
         c.pop("media_artwork_overrides"); c.pop("idle_image")
         c["card_mod"] = {"style": GLASS + MEDIA_STYLE + YAMP_BARE}
@@ -1551,37 +1647,22 @@ def yamp(entities, cols=24, height=380, actions=None, **extra):
     return c
 
 
-def media_hero(m, cols=24):
-    """The home page's 'now playing': the TV big, with a remote beside it, shown while something's on."""
-    cards = [heading("Now playing", "mdi:play-circle-outline", tap=media_path()),
-             yamp(yamp_entities(m), cols=24, height=400, actions=yamp_actions(m))]
-    t = m.get("tv") or {}
-    if t.get("remote"):
-        cards.append(yamp(yamp_entities(m, music=False), cols=12, height=400, card_type="remote_control"))
-    return cards
-
-
 def media_view(m):
-    """Media page: the TV (picture, controls, apps, remote) and the music (Music Assistant favourites,
-    search, and grouping the speakers into one)."""
+    """Media page: the TV (what's on, volume, the full remote, apps) and the music (Music Assistant
+    favourites, search, and grouping the speakers into one)."""
     t = m.get("tv") or {}
     sections = []
     if t:
-        tv = [heading(t.get("name", "TV"), "mdi:television"),
-              yamp(yamp_entities(m, music=False), cols=36, height=420, actions=yamp_actions(m))]
-        sections.append(section(tv, span=2))
-        if t.get("remote"):
-            sections.append(section([heading("Remote", "mdi:remote-tv"),
-                                     yamp(yamp_entities(m, music=False), cols=12, height=420,
-                                          card_type="remote_control")]))
+        sections.append(section([heading(t.get("name", "TV"), "mdi:television")] + tv_cards(m, True, full=True)
+                                + app_tiles(m), span=3))
     if m.get("players"):
         music = [heading("Music", "mdi:music-circle-outline"),
-                 yamp(yamp_entities(m, tv=False), cols=36, height=420,
+                 yamp(yamp_entities(m), cols=36, height=420,
                       actions=[{"name": "Search", "icon": "mdi:magnify", "menu_item": "search"},
                                {"name": "Recently played", "icon": "mdi:history",
                                 "menu_item": "search-recently-played"}])]
         sections.append(section(music, span=2))
-        first = yamp_entities(m, tv=False)[:1]
+        first = yamp_entities(m)[:1]
         sections.append(section([heading("Favourites", "mdi:heart-outline"),
                                  yamp(first, cols=12, height=420, template="dedicated_search", search_view="list")]))
     return {"title": m.get("title", "Media"), "path": "media", "subview": True, "back_path": f"/{URL_PATH}/home",
@@ -1922,8 +2003,8 @@ def room_view(area_id, r, floor):
     media = split(r.get("media"))
     m = CFG.get("media")
     if m and m.get("room") == area_id:
-        sections.append(section([heading("Media", "mdi:play-box-multiple", tap=media_path()),
-                                 yamp(yamp_entities(m), cols=12, height=340, actions=yamp_actions(m))]))
+        sections.append(section([heading("Media", "mdi:play-box-multiple", tap=media_path())]
+                                + (tv_cards(m, False) if m.get("tv") else []) + music_cards(m, 12)))
     elif media:
         cards = [heading("Media", "mdi:play-box-multiple")]
         for m in media:
