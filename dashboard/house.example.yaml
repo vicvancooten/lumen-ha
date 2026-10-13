@@ -75,8 +75,8 @@ media:                       # optional: "Now playing" on the home page while so
                              # the same on the room's page. Music via Music Assistant and the
                              # yet-another-media-player card (HACS).
   room: living_room          # the room page that gets the player and remote
-  tv:
-    name: TV
+  tvs:                       # one or more TVs; each shows on the home page while it's on
+  - name: Living room TV
     entity: media_player.living_room_tv       # what's playing: title, artwork, play/pause (e.g. Google Cast)
     power: media_player.living_room_tv_remote # optional: power button (e.g. Android TV Remote)
     remote: remote.living_room_tv             # optional: remote pad, app shortcuts
@@ -88,9 +88,14 @@ media:                       # optional: "Now playing" on the home page while so
     live_tv: {entity: media_player.tv, source: Watch TV}   # optional: a Live TV shortcut
     apps:                                     # optional: app shortcuts (remote.turn_on activity)
       - {name: YouTube, icon: mdi:youtube, activity: https://www.youtube.com}
+  # - name: Bedroom TV
+  #   room: bedroom          # the room page that gets this TV (the first TV defaults to `room` above)
+  #   entity: media_player.bedroom_tv
+  #   power: media_player.bedroom_tv_remote
+  #   remote: remote.bedroom_tv
   players:                   # music players (Music Assistant entities: search, favourites, radio)
     - {entity: media_player.living_room_speakers, name: Living room}
-    - {entity: media_player.bedroom_speakers, name: Bedroom}
+    - {entity: media_player.bedroom_speakers, name: Bedroom}   # tv: Bedroom TV  hides it while that TV is on (TV sound)
 
 birdnet:                     # optional: BirdNET-Go on the home page + a Birds page (sensors: ../ha/birdnet_go.yaml)
   title: Outside             # heading of the home-page block

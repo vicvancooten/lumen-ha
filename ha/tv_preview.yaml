@@ -1,30 +1,36 @@
-# Live preview of an Android / Google TV for Lumen's media card (`media.tv.preview` + `preview_frame`).
+# Live preview of an Android / Google TV for Lumen's media card (`preview` + `preview_frame` on a TV).
 #
 # 1. On the TV: Settings > System > About, press "Android TV OS build" 7 times; then Developer options >
 #    USB debugging on.
+#    Some devices (Chromecast with Google TV) only listen once Wireless debugging is on too, and then only
+#    with pairing, which Home Assistant's built-in ADB can't do. From a computer on the same network, with
+#    Android platform-tools (adb):
+#      adb pair <tv-ip>:<pairing port> <pairing code>   # Wireless debugging > Pair device with pairing code
+#      adb connect <tv-ip>:<port>                       # the port shown under Wireless debugging
+#      adb -s <tv-ip>:<port> tcpip 5555                 # opens the classic port, until the TV reboots
 # 2. In Home Assistant add the Android Debug Bridge integration (androidtv) for the TV's IP and accept the
 #    "Allow USB debugging?" prompt on the TV ("Always allow").
 # 3. Add a Local File camera (UI) with file path /media/living_room_tv.png, and a counter helper
 #    counter.living_room_tv_frame.
 # 4. Add this automation. While the TV is on and someone is home it takes a screenshot every ~10 s
 #    (the built-in screencap refreshes once a minute at most). /media needs a login; /config/www doesn't.
-#    Protected apps (Netflix, Disney+) show black.
+#    Protected apps (Netflix, Disney+) show black. "On" comes from the Android TV Remote entity: the ADB
+#    integration's own screen detection reads some Chromecasts as off.
 alias: Living room TV preview
 mode: single
 max_exceeded: silent
 triggers:
   - trigger: state
-    entity_id: media_player.living_room_tv_adb
+    entity_id: media_player.living_room_tv_remote   # Android TV Remote
+    to: "on"
   - trigger: homeassistant
     event: start
   - trigger: time_pattern
     minutes: /5
 conditions: &on
-  - condition: not
-    conditions:
-      - condition: state
-        entity_id: media_player.living_room_tv_adb
-        state: ["off", unavailable, unknown, standby]
+  - condition: state
+    entity_id: media_player.living_room_tv_remote
+    state: "on"
   - condition: numeric_state
     entity_id: zone.home
     above: 0

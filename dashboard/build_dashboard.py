@@ -1562,10 +1562,17 @@ ha-card:active { scale: .94; transition: scale .1s; }
 """
 
 
+def tvs(m):
+    """The TVs: `tvs` (a list), or the single `tv`. Each belongs to a `room`; the first defaults to media's."""
+    out = [dict(t) for t in (m.get("tvs") or ([m["tv"]] if m.get("tv") else []))]
+    if out:
+        out[0].setdefault("room", m.get("room"))
+    return out
+
+
 def media_on(m):
-    """Visibility: the TV is on, or one of the music players is playing."""
-    tv = m.get("tv") or {}
-    conds = [tv_on(tv)] if tv else []
+    """Visibility: a TV is on, or one of the music players is playing."""
+    conds = [tv_on(t) for t in tvs(m)]
     conds += [{"condition": "state", "entity": p["entity"], "state": "playing"} for p in ents(m.get("players"))]
     return [{"condition": "or", "conditions": conds}]
 
@@ -1588,8 +1595,7 @@ def player_card(entity, name, cols, rows=4, volume=False, tap=None, pic=None, pr
     style = media_card_style(cols > 12).replace("@PIC@", pic or a("entity_picture")).replace("@PREV@", prev or "none")
     return {"type": "custom:mushroom-template-card", "entity": entity,
             "primary": "{{ %s or %s or '%s' }}" % (a("media_title"), a("app_name"), name),
-            "secondary": ("{{ [%s, %s if %s else '%s'] | select | join(' · ') }}"
-                          % (a("media_artist"), a("app_name"), a("media_title"), name)),
+            "secondary": "{{ [%s, %s] | select | join(' · ') }}" % (a("media_artist"), a("app_name")),
             "icon": "{{ %s.get(%s, 'mdi:play-circle-outline') }}" % (icons, app),
             "icon_color": "{{ %s.get(%s, 'pink') }}" % (colors, app),
             "features": feats, "features_position": "bottom",
@@ -1619,13 +1625,12 @@ def remote_pad(t, corner, cols, rows=3):
     return {"type": "grid", "columns": 3, "square": False, "cards": buttons, **grid(cols, rows)}
 
 
-def tv_cards(m, wide, full=False):
+def tv_cards(t, wide, full=False):
     """The TV: one media card (what's on, play/pause, over the TV's own screen when there's a `preview`
     camera and a `preview_frame` counter that ticks with every new screenshot), the remote pad beside it,
     and the volume of whatever plays the sound under the pad. Wide (a three-column section) side by side,
     narrow stacked. On the home page the pad's corner button opens the Media page; on the Media page itself
     it's the TV's menu key."""
-    t = m["tv"]
     pic = prev = None
     if t.get("preview") and t.get("preview_frame"):
         url = f"state_attr('{t['preview']}', 'entity_picture')"
@@ -1647,28 +1652,32 @@ def tv_cards(m, wide, full=False):
 
 
 def music_cards(m, cols):
-    """A card per music player, shown while it plays."""
+    """A card per music player, shown while it plays, except while its `tv` (a TV's name) is on: then
+    it's playing the TV's sound, and the TV's card already shows it."""
     out = []
+    by_name = {t.get("name"): t for t in tvs(m)}
     for p in ents(m.get("players")):
         c = player_card(p["entity"], p.get("name", friendly(p["entity"])), cols, volume=True)
         c["visibility"] = [{"condition": "state", "entity": p["entity"], "state": "playing"}]
+        tv = by_name.get(p.get("tv"))
+        if tv:
+            c["visibility"].append({"condition": "state", "entity": tv.get("power", tv["entity"]), "state_not": "on"})
         out.append(c)
     return out
 
 
 def now_playing(m, wide=True):
-    """The home page's 'now playing': the TV with its remote while it's on, and any music that's playing."""
+    """The home page's 'now playing': each TV with its remote while it's on, and any music that's playing."""
     cards = [heading("Now playing", "mdi:play-circle-outline", tap=media_path())]
-    if m.get("tv"):
-        for c in tv_cards(m, wide):
-            c["visibility"] = [tv_on(m["tv"])]
+    for t in tvs(m):
+        for c in tv_cards(t, wide):
+            c["visibility"] = [tv_on(t)]
             cards.append(c)
     return cards + music_cards(m, 36 if wide else 12)
 
 
-def app_tiles(m):
+def app_tiles(t):
     """App shortcuts on the TV's remote, and live TV."""
-    t = m.get("tv") or {}
     out = [tile(t["remote"], 12, name=a["name"], icon=a.get("icon", "mdi:application"), color="red",
                 hide_state=True, tap={"action": "perform-action", "perform_action": "remote.turn_on",
                                       "target": {"entity_id": t["remote"]}, "data": {"activity": a["activity"]}})
@@ -1708,13 +1717,10 @@ def yamp(entities, cols=24, height=380, actions=None, **extra):
 
 
 def media_view(m):
-    """Media page: the TV (what's on, volume, the full remote, apps) and the music (Music Assistant
+    """Media page: each TV (what's on, volume, the full remote, apps) and the music (Music Assistant
     favourites, search, and grouping the speakers into one)."""
-    t = m.get("tv") or {}
-    sections = []
-    if t:
-        sections.append(section([heading(t.get("name", "TV"), "mdi:television")] + tv_cards(m, True, full=True)
-                                + app_tiles(m), span=3))
+    sections = [section([heading(t.get("name", "TV"), "mdi:television")] + tv_cards(t, True, full=True)
+                        + app_tiles(t), span=3) for t in tvs(m)]
     if m.get("players"):
         music = [heading("Music", "mdi:music-circle-outline"),
                  yamp(yamp_entities(m), cols=36, height=420,
@@ -2061,10 +2067,14 @@ def room_view(area_id, r, floor):
 
     # Media
     media = split(r.get("media"))
-    m = CFG.get("media")
-    if m and m.get("room") == area_id:
-        sections.append(section([heading("Media", "mdi:play-box-multiple", tap=media_path())]
-                                + (tv_cards(m, False) if m.get("tv") else []) + music_cards(m, 12)))
+    m = CFG.get("media") or {}
+    here = [t for t in tvs(m) if t.get("room") == area_id]
+    if here or (m and m.get("room") == area_id):
+        cards = [heading("Media", "mdi:play-box-multiple", tap=media_path())]
+        cards += sum((tv_cards(t, False) for t in here), [])
+        cards += music_cards(m, 12) if m.get("room") == area_id else []
+        cards += [tile_from(sw, 6, color="pink") for sw in split(r.get("sound_switches"))]
+        sections.append(section(cards))
     elif media:
         cards = [heading("Media", "mdi:play-box-multiple")]
         for m in media:
