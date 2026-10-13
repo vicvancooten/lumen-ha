@@ -507,12 +507,29 @@ if (!window.__lumenEnter?.isConnected) {
 """
 
 
+# Embedded Home Assistant apps (an iframe card on /api/hassio_ingress/...) only load once the browser holds an
+# `ingress_session` cookie, which the frontend sets when an app panel is opened. This does the same call, at
+# most every 20 minutes, from the navbar's JS so the Birds page works however you arrive at it.
+INGRESS_JS = """
+(function () {
+  const key = '__lumenIngress', now = Date.now();
+  if (window[key] && now - window[key] < 20 * 60 * 1000) return;
+  window[key] = now;
+  hass.callWS({type: 'supervisor/api', endpoint: '/ingress/session', method: 'post'}).then((r) => {
+    document.cookie = 'ingress_session=' + r.session + ';path=/api/hassio_ingress/;SameSite=Strict'
+      + (location.protocol === 'https:' ? ';Secure' : '');
+  }).catch(() => { window[key] = 0; });
+})();
+"""
+
+
+
 def navbar():
     def selected(paths):
         return "[[[ return " + json.dumps(paths) + ".includes(window.location.pathname) ]]]"
 
     # Tab index per page (rooms map to their floor's tab), used by the sliding indicator.
-    tabs = {f"/{URL_PATH}/home": 0}
+    tabs = {f"/{URL_PATH}/home": 0, f"/{URL_PATH}/birds": 0}
     for i, f in enumerate(FLOORS, start=1):
         tabs[f"/{URL_PATH}/{f['path']}"] = i
         tabs.update({f"/{URL_PATH}/{r['path']}": i for r in ROOMS.values() if r["floor"] == f["id"]})
@@ -521,7 +538,8 @@ def navbar():
                            float(CFG["haunted"].get("duration", 1))) if haunted else ""
     heroes = [f"/{URL_PATH}/{r['path']}" for r in ROOMS.values() if r.get("picture")]
     home_selected = ("[[[ " + NAV_MOTION_JS % json.dumps(tabs) + ENTER_JS % json.dumps(heroes) + haunt_js +
-                     f"return window.location.pathname === {json.dumps(f'/{URL_PATH}/home')}; ]]]")
+                     (INGRESS_JS if CFG.get("birdnet", {}).get("saezuri_app") else "") +
+                     f"return {json.dumps([f'/{URL_PATH}/home', birds_path()])}.includes(window.location.pathname); ]]]")
     routes = [{"url": f"/{URL_PATH}/home", "icon": "mdi:home-outline", "icon_selected": "mdi:home",
                "label": "Home", "selected": home_selected}]
     for f in FLOORS:
@@ -838,12 +856,15 @@ def home_view(areas_by_floor):
             "max_columns": 3, "dense_section_placement": True, "sections": sections}
 
 
-def birdnet_cards(b):
-    """Home-page block (a full-width section): the garden camera with the last bird heard laid over it,
-    and today's tallies beside it. Without `camera`, the last bird is a card of its own."""
-    last, photo, tap = b["last_bird"], b.get("photo"), b.get("tap_path")
+def birds_path():
+    return f"/{URL_PATH}/birds"
+
+
+def bird_card(b, tap=None, **extra):
+    """The last bird heard, as a mushroom card: photo, name, confidence, how long ago."""
+    last, photo = b["last_bird"], b.get("photo")
     none = f"states('{last}') in ('unknown', 'unavailable', 'none')"
-    bird = {
+    card = {
         "type": "custom:mushroom-template-card", "entity": last, "layout": "horizontal",
         "icon": "mdi:bird", "icon_color": "teal",
         "primary": f"{{{{ 'No birds heard yet' if {none} else states('{last}') }}}}",
@@ -851,50 +872,166 @@ def birdnet_cards(b):
                       f"{{% set t = state_attr('{last}', 'timestamp') %}}"
                       "{% if c and t %}{{ (c * 100) | round(0) | int }}% · {{ relative_time(as_datetime(t)) }} ago"
                       "{% else %}Listening…{% endif %}"),
-        "badge_icon": f"{{{{ 'mdi:star-circle' if state_attr('{last}', 'isNewSpecies') else '' }}}}",
-        "badge_color": "amber",
-        "tap_action": {"action": "navigate", "navigation_path": tap} if tap else {"action": "more-info"},
+        "tap_action": tap or {"action": "none"},
+        **extra,
     }
     if photo:
-        bird["picture"] = f"{{{{ state_attr('{photo}', 'entity_picture') }}}}"
+        card["picture"] = f"{{{{ state_attr('{photo}', 'entity_picture') }}}}"
+    return card
 
-    camera = b.get("camera")
-    if camera:
-        def pinned(card, **edges):
-            # picture-elements positions an element from its centre; pin to the edges instead.
-            return {**card, "style": {"top": "auto", "bottom": "auto", "left": "auto", "right": "auto",
-                                      "transform": "none", **edges}}
-        live = {"type": "custom:mushroom-chips-card", "alignment": "start",
-                "chips": [{"type": "template", "icon": "mdi:circle", "icon_color": "red", "content": "Live"}]}
-        left = {"type": "picture-elements", "camera_image": camera, "camera_view": "live",
-                "aspect_ratio": "16:9", **grid(24),
-                "elements": [
-                    pinned(live, top="12px", left="12px"),
-                    {"type": "icon", "icon": "mdi:arrow-expand", "entity": camera, "tap_action": {"action": "more-info"},
-                     "style": {"top": "26px", "right": "26px", "color": "#fff", "--mdc-icon-size": "26px",
-                               "filter": "drop-shadow(0 1px 4px rgba(0,0,0,.6))"}},
-                    pinned(bird, bottom="12px", left="12px", right="12px"),
-                ]}
-    else:
-        left = {**bird, **grid(24)}
 
-    side = []
-    if photo and camera:
-        side.append({"type": "picture-entity", "entity": photo, "show_name": False, "show_state": False,
-                     "aspect_ratio": "5:2", "fit_mode": "cover", "tap_action": bird["tap_action"]})
+def camera_card(camera, name, live=True, bird=None, visibility=None, cols=24):
+    """A camera with a name and Live chip over it, an expand button, and optionally a bird card pinned below."""
+    def pinned(card, **edges):
+        # picture-elements positions an element from its centre; pin to the edges instead.
+        return {**card, "style": {"top": "auto", "bottom": "auto", "left": "auto", "right": "auto",
+                                  "transform": "none", **edges}}
+    chips = [{"type": "template", "icon": "mdi:cctv", "content": name}]
+    chips.append({"type": "template", "icon": "mdi:circle", "icon_color": "red", "content": "Live"} if live
+                 else {"type": "template", "icon": "mdi:history", "content": "Last visitor"})
+    elements = [
+        pinned({"type": "custom:mushroom-chips-card", "alignment": "start", "chips": chips}, top="12px", left="12px"),
+        {"type": "icon", "icon": "mdi:arrow-expand", "entity": camera, "tap_action": {"action": "more-info"},
+         "style": {"top": "26px", "right": "26px", "color": "#fff", "--mdc-icon-size": "26px",
+                   "filter": "drop-shadow(0 1px 4px rgba(0,0,0,.6))"}},
+    ]
+    if bird:
+        elements.append(pinned(bird, bottom="12px", left="12px", right="12px"))
+    card = {"type": "picture-elements", "camera_image": camera, "camera_view": "live" if live else "auto",
+            "aspect_ratio": "16:9", "elements": elements, **grid(cols)}
+    if visibility:
+        card["visibility"] = visibility
+    return card
+
+
+def door_cameras(d, cols):
+    """The front door: live while the doorbell is wired or active, the last visitor's snapshot otherwise."""
+    wired, timer = d.get("wired"), d.get("timer")
+    name = d.get("name", "Front door")
+    if not (d.get("idle") and (wired or timer)):
+        return [camera_card(d["live"], name, cols=cols)]
+    live_if = [{"condition": "or", "conditions": (
+        ([{"condition": "state", "entity": wired, "state": "on"}] if wired else []) +
+        ([{"condition": "state", "entity": timer, "state": "active"}] if timer else []))}]
+    idle_if = ([{"condition": "state", "entity": wired, "state_not": "on"}] if wired else []) + \
+              ([{"condition": "state", "entity": timer, "state_not": "active"}] if timer else [])
+    return [camera_card(d["live"], name, visibility=live_if, cols=cols),
+            camera_card(d["idle"], name, live=False, visibility=idle_if, cols=cols)]
+
+
+def bird_tiles(b, cols, tap):
+    tiles = []
     if b.get("species_today"):
-        side.append(tile(b["species_today"], 12, name="Species today", icon="mdi:feather", color="teal"))
+        tiles.append(tile(b["species_today"], cols, name="Species today", icon="mdi:feather", color="teal", tap=tap))
     if b.get("detections_today"):
-        side.append(tile(b["detections_today"], 12, name="Detections", icon="mdi:microphone", color="cyan"))
+        tiles.append(tile(b["detections_today"], cols, name="Detections", icon="mdi:microphone", color="cyan", tap=tap))
     if b.get("top_bird"):
-        side.append(tile(b["top_bird"], 12, name="Most heard today", icon="mdi:trophy-outline", color="amber"))
-    side += [tile_from(t, 12) for t in b.get("extra_tiles", [])]
+        tiles.append(tile(b["top_bird"], cols, name="Most heard today", icon="mdi:trophy-outline", color="amber", tap=tap))
+    return tiles
+
+
+def top_species_card(b, cols=12):
+    """Species heard today with a bar each, from the `top_species` sensor ('Name~count;Name~count')."""
+    s = b["top_species"]
+    return {"type": "markdown", "title": "Heard today", "content": (
+        f"{{% set raw = states('{s}') %}}"
+        "{% if raw in ('unknown', 'unavailable', 'none', '') %}Nothing heard yet today."
+        "{% else %}{% set rows = raw.split(';') %}{% set top = rows[0].split('~')[1] | int(1) %}"
+        "{% for r in rows %}{% set p = r.split('~') %}"
+        "**{{ p[0] }}** · {{ p[1] }}  \n{{ '▬' * ([(p[1] | int(0) / top * 12) | round(0, 'ceil') | int, 1] | max) }}\n\n"
+        "{% endfor %}{% endif %}"), **grid(cols)}
+
+
+def recent_birds_card(b, cols=12):
+    """The latest detections, from the `recent` sensor's `data` attribute."""
+    s = b["recent"]
+    return {"type": "markdown", "title": "Recently heard", "content": (
+        f"{{% set d = state_attr('{s}', 'data') %}}"
+        "{% if not d %}No detections yet."
+        "{% else %}| When | Species | |\n|:--|:--|--:|\n"
+        "{% for x in d %}| {{ x.time[:5] if x.date == now().strftime('%Y-%m-%d') else x.date[5:] ~ ' ' ~ x.time[:5] }} "
+        "| {{ x.commonName }} | {{ (x.confidence * 100) | round(0) | int }}% |\n"
+        "{% endfor %}{% endif %}"), **grid(cols)}
+
+
+def birdnet_cards(b):
+    """Home-page hero (a full-width section): the garden camera with the last bird laid over it, the
+    front door camera beside it, and today's bird tallies and device tiles underneath."""
+    go = nav(birds_path())
+    camera, door = b.get("camera"), b.get("door_camera")
+    cards = [heading(b.get("title", "Outside"), "mdi:cctv" if camera else "mdi:bird",
+                     tap=b.get("camera_page") or birds_path())]
+    extra = [tile_from(t, 12) for t in b.get("extra_tiles", [])]
+    for t in extra:
+        t.pop("grid_options", None)
+    if camera and door:
+        cards.append(camera_card(camera, b.get("camera_name", "Garden"), bird=bird_card(b, tap=go), cols=18))
+        cards += door_cameras(door, 18)
+        cards += bird_tiles(b, 12, go)
+        if extra:
+            for t in extra:
+                t["grid_options"] = {"columns": max(36 // len(extra), 6)}
+            cards += extra
+        return cards
+    left = (camera_card(camera, b.get("camera_name", "Garden"), bird=bird_card(b, tap=go), cols=24) if camera
+            else bird_card(b, tap=go, **grid(24)))
+    side = bird_tiles(b, 12, go) + extra
     for t in side:
         t.pop("grid_options", None)
-    cards = [heading(b.get("title", "Birds"), "mdi:bird", tap=b.get("camera_page") or tap), left]
+    cards.append(left)
     if side:
         cards.append({"type": "vertical-stack", "cards": side, **grid(12)})
     return cards
+
+
+def birds_view(b):
+    """Birds page: the Saezuri collage (iframe via ingress), the last bird and the day's tallies."""
+    src = b.get("saezuri_src")
+    tiles = [bird_card(b)] + bird_tiles(b, 12, None)
+    for t in tiles:
+        t.pop("grid_options", None)
+    for key, label, icon in (("saezuri_app", "Open Saezuri", "mdi:bird"), ("birdnet_app", "Open BirdNET-Go", "mdi:waveform")):
+        if b.get(key):
+            tiles.append({"type": "tile", "entity": b["last_bird"], "name": label, "icon": icon, "color": "teal",
+                          "hide_state": True, "tap_action": nav("/" + b[key])})
+    if src:
+        first = [heading("Recently heard", "mdi:bird"),
+                 {"type": "iframe", "url": src, "aspect_ratio": "75%", **grid(24, rows=10)},
+                 {"type": "vertical-stack", "cards": tiles, **grid(12)}]
+    else:
+        first = [heading("Birds", "mdi:bird")] + [{**t, **grid(12)} for t in tiles]
+    sections = [section(first, span=3)]
+    lower = []
+    if b.get("top_species"):
+        lower.append(top_species_card(b, 18))
+    if b.get("recent"):
+        lower.append(recent_birds_card(b, 18))
+    if lower:
+        sections.append(section(lower, span=3))
+    return {"title": "Birds", "path": "birds", "subview": True, "back_path": f"/{URL_PATH}/home",
+            "type": "sections", "max_columns": 3, "dense_section_placement": True, "sections": sections}
+
+
+def bird_room_section(b):
+    """Extra bird detail for a room page (the garden): last bird, today's species, latest detections."""
+    cards = [heading("Birds", "mdi:bird", tap=birds_path()), bird_card(b, tap=nav(birds_path()), **grid(36))]
+    if b.get("top_species"):
+        cards.append(top_species_card(b, 18))
+    if b.get("recent"):
+        cards.append(recent_birds_card(b, 18))
+    return section(cards, span=3)
+
+
+def resolve_saezuri(call, b):
+    """Look up Saezuri's ingress URL (it changes whenever the app is reinstalled) for the Birds page iframe."""
+    app = b.get("saezuri_app")
+    if not app:
+        return
+    try:
+        info = call("supervisor/api", endpoint=f"/addons/{app}/info", method="get")
+        b["saezuri_src"] = info["ingress_entry"].rstrip("/") + "/"
+    except (RuntimeError, KeyError) as e:
+        print(f"WARNING: could not look up the Saezuri app {app!r} ({e}); the Birds page has no collage")
 
 
 def floor_view(f, areas_by_floor):
@@ -1175,11 +1312,18 @@ def main():
     floor_by_id = {f["id"]: f for f in FLOORS}
     haunt(call, areas, "--dry-run" in sys.argv)
 
+    if CFG.get("birdnet"):
+        resolve_saezuri(call, CFG["birdnet"])
     views = [home_view(areas_by_floor)]
     views += [floor_view(f, areas_by_floor) for f in FLOORS]
     views += [room_view(a, ROOMS[a], floor_by_id[ROOMS[a]["floor"]])
               for f in FLOORS for a in areas_by_floor[f["id"]] if a in ROOMS]
 
+    if CFG.get("birdnet"):
+        views.append(birds_view(CFG["birdnet"]))
+        room = next((v for v in views if v["path"] == ROOMS.get(CFG["birdnet"].get("room"), {}).get("path")), None)
+        if room:
+            room["sections"].insert(1, bird_room_section(CFG["birdnet"]))
     apply_overlay(views)
 
     unknown = sorted(set(ROOMS) - {a["area_id"] for a in areas})
@@ -1188,7 +1332,7 @@ def main():
     missing = sorted({e for r in ROOMS.values()
                       for k in ("lights", "media", "motion", "batteries", "automations", "power", "contacts")
                       for e in ids(r.get(k)) if e not in STATES}
-                     | {e for k in ("last_bird", "photo", "species_today", "detections_today", "top_bird")
+                     | {e for k in ("last_bird", "photo", "species_today", "detections_today", "top_bird", "top_species", "recent")
                         for e in [CFG.get("birdnet", {}).get(k)] if e and e not in STATES})
     if missing:
         print("WARNING: entities not found in Home Assistant:", missing)

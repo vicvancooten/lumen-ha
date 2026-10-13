@@ -7,8 +7,9 @@
 #     packages: !include_dir_named packages
 #
 # (or paste the two top-level blocks below into configuration.yaml), then restart Home Assistant.
-# Change the host if BirdNET-Go isn't on 192.168.5.5:8080. From Home Assistant itself the add-on is
-# also reachable as http://db21ed7f-birdnet-go:8080 (the slug hash is shown on the add-on's page).
+# The host below is the BirdNET-Go add-on's hostname as Home Assistant sees it (the hash is the add-on
+# repository's, shown in the add-on's URL). If BirdNET-Go runs elsewhere, replace it with that machine's
+# address and port, e.g. http://192.168.1.20:8080 (find and replace all occurrences).
 #
 # Entities created:
 #   sensor.birdnet_go_last_bird          state = species; attributes confidence, timestamp, scientificName, ...
@@ -16,9 +17,11 @@
 #   sensor.birdnet_go_species_today      distinct species heard today
 #   sensor.birdnet_go_detections_today   detections today
 #   sensor.birdnet_go_top_bird_today     most-heard species today
+#   sensor.birdnet_go_top_species_today  the top six as "Name~count;Name~count" (for the species bars)
+#   sensor.birdnet_go_recent_detections  state = total; attribute `data` = the latest eight detections
 
 rest:
-  - resource: http://192.168.5.5:8080/api/v2/detections/recent?limit=1
+  - resource: http://db21ed7f-birdnet-go:8080/api/v2/detections/recent?limit=1
     scan_interval: 60
     sensor:
       - name: BirdNET-Go last bird
@@ -28,7 +31,7 @@ rest:
         json_attributes_path: "$[0]"
         json_attributes: [scientificName, confidence, timestamp, isNewSpecies, isNewThisYear]
 
-  - resource: http://192.168.5.5:8080/api/v2/analytics/species/daily
+  - resource: http://db21ed7f-birdnet-go:8080/api/v2/analytics/species/daily
     scan_interval: 120
     sensor:
       - name: BirdNET-Go species today
@@ -49,11 +52,26 @@ rest:
         value_template: >-
           {% set top = value_json | sort(attribute='count', reverse=true) | first | default(none) %}
           {{ top.common_name if top else 'none' }}
+      - name: BirdNET-Go top species today
+        unique_id: birdnet_go_top_species_today
+        icon: mdi:podium
+        value_template: >-
+          {%- set top = value_json | sort(attribute='count', reverse=true) | list -%}
+          {%- if top -%}{%- for s in top[:6] -%}{{ s.common_name }}~{{ s.count }}{{ ';' if not loop.last }}{%- endfor -%}{%- else -%}none{%- endif -%}
+
+  - resource: http://db21ed7f-birdnet-go:8080/api/v2/detections?numResults=8
+    scan_interval: 60
+    sensor:
+      - name: BirdNET-Go recent detections
+        unique_id: birdnet_go_recent_detections
+        icon: mdi:history
+        value_template: "{{ value_json.total }}"
+        json_attributes: [data]
 
 template:
   - image:
       - name: BirdNET-Go last bird photo
         unique_id: birdnet_go_last_bird_photo
         url: >-
-          http://192.168.5.5:8080/api/v2/media/image/{{ state_attr('sensor.birdnet_go_last_bird', 'scientificName') | urlencode }}
+          http://db21ed7f-birdnet-go:8080/api/v2/media/image/{{ state_attr('sensor.birdnet_go_last_bird', 'scientificName') | urlencode }}
         availability: "{{ state_attr('sensor.birdnet_go_last_bird', 'scientificName') is string }}"

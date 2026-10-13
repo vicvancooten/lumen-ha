@@ -119,9 +119,15 @@ and the most-heard bird.
    BirdNET-Go's API, so no MQTT broker is needed.
 2. Add the `birdnet:` section from `house.example.yaml` to your `house.yaml` and regenerate.
 
-With `camera:` set, the block becomes a full-width hero: the live camera with the last bird (photo,
-confidence, time ago) laid over it, and a column beside it with the bird's photo, today's tallies and
-any `extra_tiles`.
+The block is a full-width hero. With `camera:` set it shows the live camera with the last bird (photo,
+confidence, time ago) laid over it; add `door_camera:` for a second camera beside it (live while the
+doorbell is active, the last visitor otherwise). Tapping a bird opens a **Birds** page with the Saezuri
+collage embedded, today's species and the latest detections; `room:` adds the same detail to a room page.
+
+The collage is embedded through Home Assistant's ingress. The browser needs an `ingress_session` cookie for
+that, which the frontend normally sets only when you open the app's own panel, so the generator's navbar
+refreshes one in the background (at most every 20 minutes). The app's ingress URL changes when it is
+reinstalled, so regenerate the dashboard after that.
 
 ### Keeping hand-made pages (optional)
 
