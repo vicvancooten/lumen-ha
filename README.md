@@ -129,6 +129,14 @@ that, which the frontend normally sets only when you open the app's own panel, s
 refreshes one in the background (at most every 20 minutes). The app's ingress URL changes when it is
 reinstalled, so regenerate the dashboard after that.
 
+### Game consoles (optional)
+
+With the [PlayStation Network](https://www.home-assistant.io/integrations/playstation_network/) integration, a
+console in a game shows up wherever the TVs do: on the home page's **Now playing** (in place of the TV it's
+plugged into), on its room's page and on the **Media** page, as the game's title over its art with how long it's
+been on. Name the account's `psn` prefix and the Media page also gets the profile (avatar, online status, trophy
+level) and the trophy counts. Add a `consoles:` list under `media:` (see `house.example.yaml`) and regenerate.
+
 ### Keeping hand-made pages (optional)
 
 Regenerating replaces the whole dashboard, so anything added in the HA editor is lost. Export what you

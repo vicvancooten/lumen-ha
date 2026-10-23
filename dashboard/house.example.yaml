@@ -95,6 +95,14 @@ media:                       # optional: "Now playing" on the home page while so
   #   entity: media_player.bedroom_tv
   #   power: media_player.bedroom_tv_remote
   #   remote: remote.bedroom_tv
+  consoles:                  # optional: game consoles. While one is in a game: the game over its art on the home
+                             # page (instead of its TV), on its room's page and on the Media page
+  - name: PlayStation 5
+    entity: media_player.playstation_5        # PlayStation Network integration: the title and its art
+    tv: Living room TV                        # optional: the TV it's plugged into (its card steps aside)
+    psn: my_online_id                         # optional: the account's entities' prefix (sensor.<psn>_trophy_level...):
+                                              #   profile, online status, trophy level and trophies on the Media page
+    # room: living_room                       # optional: default media's `room`
   players:                   # music players (Music Assistant entities: search, favourites, radio)
     - {entity: media_player.living_room_speakers, name: Living room}
     - {entity: media_player.bedroom_speakers, name: Bedroom}   # tv: Bedroom TV  hides it while that TV is on (TV sound)

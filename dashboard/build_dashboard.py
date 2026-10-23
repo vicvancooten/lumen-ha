@@ -1582,8 +1582,8 @@ def tvs(m):
 
 
 def media_on(m):
-    """Visibility: a TV is on, or one of the music players is playing."""
-    conds = [tv_on(t) for t in tvs(m)]
+    """Visibility: a TV is on, a console is in a game, or one of the music players is playing."""
+    conds = [tv_on(t) for t in tvs(m)] + [in_game(c) for c in consoles(m)]
     conds += [{"condition": "state", "entity": p["entity"], "state": "playing"} for p in ents(m.get("players"))]
     return [{"condition": "or", "conditions": conds}]
 
@@ -1681,9 +1681,15 @@ def now_playing(m, wide=True):
     """The home page's 'now playing': each TV with its remote while it's on, and any music that's playing."""
     cards = [heading("Now playing", "mdi:play-circle-outline", tap=media_path())]
     for t in tvs(m):
+        gaming = [c for c in consoles(m) if c.get("tv") == t.get("name")]
         for c in tv_cards(t, wide):
-            c["visibility"] = [tv_on(t)]
+            # while its console is in a game, the TV is showing the game: that card says it
+            c["visibility"] = [tv_on(t)] + [{"condition": "state", "entity": g["entity"], "state_not": "playing"} for g in gaming]
             cards.append(c)
+    for c in consoles(m):
+        card = game_card(c, 36 if wide else 12)
+        card["visibility"] = [in_game(c)]
+        cards.append(card)
     return cards + music_cards(m, 36 if wide else 12)
 
 
@@ -1727,11 +1733,87 @@ def yamp(entities, cols=24, height=380, actions=None, **extra):
     return c
 
 
+# --------------------------------------------------------------------------------------
+# Game consoles: the game over its art, and (PlayStation Network) the account and its trophies
+# --------------------------------------------------------------------------------------
+TROPHIES = (("platinum", "Platinum", "light-blue"), ("gold", "Gold", "amber"),
+            ("silver", "Silver", "blue-grey"), ("bronze", "Bronze", "deep-orange"))
+PSN_STATUS = {"availabletoplay": "Online", "availabletocommunicate": "Online on the app", "busy": "Busy",
+              "offline": "Offline"}
+
+
+def consoles(m):
+    """The consoles (`consoles`), each in a `room` (default: media's)."""
+    out = ents(m.get("consoles"))
+    for c in out:
+        c.setdefault("room", m.get("room"))
+    return out
+
+
+def in_game(c):
+    return {"condition": "state", "entity": c["entity"], "state": "playing"}
+
+
+def psn(c, key):
+    """An entity of the console's PSN account: the integration names them after the online id (`psn`)."""
+    domain, name = key.split(".")
+    return f"{domain}.{c['psn']}_{name}"
+
+
+def game_card(c, cols, rows=4):
+    """The game being played: its title over its art (the PlayStation Network integration's media player
+    has both), the console, who's signed in and for how long."""
+    e = c["entity"]
+    who = f"states('{psn(c, 'sensor.online_id')}')" if c.get("psn") else "none"
+    style = media_card_style(cols > 12).replace("@PIC@", f"state_attr('{e}', 'entity_picture')").replace("@PREV@", "none")
+    return {"type": "custom:mushroom-template-card", "entity": e,
+            "primary": "{{ state_attr('%s', 'media_title') or '%s' }}" % (e, c.get("name", "Game")),
+            "secondary": "{{ ['%s', %s, 'for ' ~ relative_time(states.%s.last_changed)] | select | join(' · ') }}"
+                         % (c.get("name", "Console"), who, e),
+            "icon": c.get("icon", "mdi:sony-playstation"), "icon_color": "blue",
+            "tap_action": {"action": "more-info"}, "_style": "plain",
+            "card_mod": {"style": GLASS + style}, **grid(cols, rows)}
+
+
+def psn_cards(c):
+    """The account: avatar, online id, online or what's being played, the trophy level; the trophies."""
+    if not c.get("psn"):
+        return []
+    status, level, nxt = psn(c, "sensor.online_status"), psn(c, "sensor.trophy_level"), psn(c, "sensor.next_level")
+    names = "{%s}" % ", ".join(f"'{k}': '{v}'" for k, v in PSN_STATUS.items())
+    profile = {"type": "custom:mushroom-template-card", "entity": psn(c, "sensor.online_id"),
+               "picture": "{{ state_attr('%s', 'entity_picture') }}" % psn(c, "image.avatar"),
+               "primary": "{{ states('%s') }}" % psn(c, "sensor.online_id"),
+               "secondary": ("{%% set g = state_attr('%s', 'media_title') %%}"
+                             "{{ ('Playing ' ~ g) if is_state('%s', 'playing') and g else %s.get(states('%s'), states('%s')) }}"
+                             " · Level {{ states('%s') }} · {{ states('%s') }}%% to the next")
+                            % (c["entity"], c["entity"], names, status, status, level, nxt),
+               "badge_icon": "{{ 'mdi:circle' if states('%s') not in ['offline', 'unavailable', 'unknown'] else '' }}" % status,
+               "badge_color": "green", "tap_action": {"action": "more-info"}, **grid(12)}
+    trophies = [tile(psn(c, f"sensor.{k}_trophies"), 3, vertical=True, name=n, icon="mdi:trophy", color=col)
+                for k, n, col in TROPHIES if usable(psn(c, f"sensor.{k}_trophies"))]
+    return [profile] + trophies
+
+
+def console_section(c):
+    """A console on the Media page: the game while one is on, the account, the trophies."""
+    plus = psn(c, "binary_sensor.subscribed_to_playstation_plus") if c.get("psn") else None
+    badges = [{**badge(plus, "amber", name="PS Plus", icon="mdi:plus-circle"), "show_state": False,
+               "visibility": [{"condition": "state", "entity": plus, "state": "on"}]}] if plus and usable(plus) else []
+    game = game_card(c, 36)
+    game["visibility"] = [in_game(c)]
+    idle = tile(c["entity"], 12, name=c.get("name"), icon=c.get("icon", "mdi:sony-playstation"), color="blue")
+    idle["visibility"] = [{"condition": "state", "entity": c["entity"], "state_not": "playing"}]
+    return section([heading(c.get("name", "Console"), c.get("icon", "mdi:sony-playstation"), badges=badges),
+                    game, idle] + psn_cards(c), span=3)
+
+
 def media_view(m):
-    """Media page: each TV (what's on, volume, the full remote, apps) and the music (Music Assistant
-    favourites, search, and grouping the speakers into one)."""
+    """Media page: each TV (what's on, volume, the full remote, apps), the consoles (the game, the account,
+    its trophies) and the music (Music Assistant favourites, search, and grouping the speakers into one)."""
     sections = [section([heading(t.get("name", "TV"), "mdi:television")] + tv_cards(t, True, full=True)
                         + app_tiles(t), span=3) for t in tvs(m)]
+    sections += [console_section(c) for c in consoles(m)]
     if m.get("players"):
         music = [heading("Music", "mdi:music-circle-outline"),
                  yamp(yamp_entities(m), cols=36, height=420,
@@ -2080,9 +2162,14 @@ def room_view(area_id, r, floor):
     media = split(r.get("media"))
     m = CFG.get("media") or {}
     here = [t for t in tvs(m) if t.get("room") == area_id]
-    if here or (m and m.get("room") == area_id):
+    games = [c for c in consoles(m) if c.get("room") == area_id]
+    if here or games or (m and m.get("room") == area_id):
         cards = [heading("Media", "mdi:play-box-multiple", tap=media_path())]
         cards += sum((tv_cards(t, False) for t in here), [])
+        for c in games:
+            card = game_card(c, 12)
+            card["visibility"] = [in_game(c)]
+            cards.append(card)
         cards += music_cards(m, 12) if m.get("room") == area_id else []
         cards += [tile_from(sw, 6, color="pink") for sw in split(r.get("sound_switches"))]
         sections.append(section(cards))
