@@ -2083,7 +2083,7 @@ FAVOURITE_LOOKS = (
     ("cinema|tv", "mdi:popcorn", ["#6f86ff", "#2848ff", "#06082a"]),
     ("pulse|beat", "mdi:heart-pulse", ["#ff9b5a", "#ff3d6e", "#6a1b9a"]),
     ("spectrum|rainbow", "mdi:equalizer", ["#ff2d55", "#ffd000", "#00e0ff"]),
-    ("party|disco|club", "mdi:disco-ball", ["#ff00c8", "#7c4dff", "#00e5ff"]),
+    ("party|disco|club", "mdi:party-popper", ["#ff00c8", "#7c4dff", "#00e5ff"]),
     ("bright|day|white", "mdi:white-balance-sunny", ["#ffffff", "#fff1dc", "#ffd6aa"]),
     ("night|sleep", "mdi:weather-night", ["#ff7a2a", "#ff4500", "#2a0a00"]),
     ("hallow|spook", "mdi:halloween", ["#ff7a00", "#ff3c00", "#6a1b9a"]),
