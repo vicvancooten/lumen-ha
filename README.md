@@ -137,6 +137,14 @@ plugged into), on its room's page and on the **Media** page, as the game's title
 been on. Name the account's `psn` prefix and the Media page also gets the profile (avatar, online status, trophy
 level) and the trophy counts. Add a `consoles:` list under `media:` (see `house.example.yaml`) and regenerate.
 
+### LED strips (optional)
+
+A [WLED](https://www.home-assistant.io/integrations/wled/) strip listed under a room's `strips:` gets its own
+section on the room page: the strip with its brightness and what it's playing, its favourites (WLED presets) as
+big swatches in their own colours, the one it's on glowing, and any switches that go with it (follow the music,
+a length slider). Favourites are coloured and iconed by what they're called (Fireplace, Aurora, Movie...), or by
+`colors:` and `icon:` per favourite. See `house.example.yaml`.
+
 ### Keeping hand-made pages (optional)
 
 Regenerating replaces the whole dashboard, so anything added in the HA editor is lost. Export what you

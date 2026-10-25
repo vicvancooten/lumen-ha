@@ -165,6 +165,14 @@ rooms:
       - {entity: scene.living_room_bright, name: Bright, icon: mdi:white-balance-sunny, color: amber}
       - {entity: scene.evening, name: Evening, icon: mdi:weather-sunset, color: pink}
     media: [media_player.living_room_tv, media_player.living_room_speaker]
+    strips:                  # optional: WLED LED strips, with their favourites (WLED presets) as big colour swatches
+      - entity: light.couch_strip
+        name: Couch strip
+        # preset: select.couch_strip_preset          # default: select.<light>_preset
+        # length: input_number.couch_strip_length    # a slider for how many LEDs light up (yours to wire up)
+        # toggles: [input_boolean.couch_strip_follows_the_music]   # switches that go with it
+        # favourites: [Fireplace, Candlelight, {option: Movie, icon: mdi:filmstrip, colors: ["#ff8a3a", "#3a1400"]}]
+        #   (default: every preset, coloured and iconed by what they're called)
     vacuum:                  # optional robot-vacuum panel
       entity: vacuum.robot
       name: Vacuum

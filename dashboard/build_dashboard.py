@@ -2067,6 +2067,87 @@ ha-tile-icon { scale: 1.12; }
 """
 
 
+# --------------------------------------------------------------------------------------
+# LED strips (WLED): the strip with its brightness, its favourites (WLED presets) as big
+# swatches in their own colours, the one it's on glowing, and the switches that go with it
+# --------------------------------------------------------------------------------------
+# A favourite's colours, when house.yaml doesn't give them: from what it's called.
+FAVOURITE_LOOKS = (
+    ("fire|hearth|flame", "mdi:fireplace", ["#ffb14a", "#ff5a0a", "#7a1400"]),
+    ("ember|lava", "mdi:campfire", ["#ff7a1a", "#c81e00", "#2a0000"]),
+    ("candle", "mdi:candle", ["#ffd08a", "#ff9a3c", "#5a2600"]),
+    ("sunset|dusk", "mdi:weather-sunset", ["#ffb03a", "#e64a6a", "#5a1e8c"]),
+    ("aurora|polar", "mdi:aurora", ["#7cff6b", "#00c853", "#0a3d62"]),
+    ("ocean|sea|water", "mdi:waves", ["#5ee7ff", "#00a3d4", "#0a2a7a"]),
+    ("movie|film", "mdi:movie-open-outline", ["#ff8a3a", "#ff6a1a", "#3a1400"]),
+    ("cinema|tv", "mdi:popcorn", ["#6f86ff", "#2848ff", "#06082a"]),
+    ("pulse|beat", "mdi:heart-pulse", ["#ff9b5a", "#ff3d6e", "#6a1b9a"]),
+    ("spectrum|rainbow", "mdi:equalizer", ["#ff2d55", "#ffd000", "#00e0ff"]),
+    ("party|disco|club", "mdi:disco-ball", ["#ff00c8", "#7c4dff", "#00e5ff"]),
+    ("bright|day|white", "mdi:white-balance-sunny", ["#ffffff", "#fff1dc", "#ffd6aa"]),
+    ("night|sleep", "mdi:weather-night", ["#ff7a2a", "#ff4500", "#2a0a00"]),
+    ("hallow|spook", "mdi:halloween", ["#ff7a00", "#ff3c00", "#6a1b9a"]),
+    ("christmas|xmas", "mdi:pine-tree", ["#ff2a2a", "#ffffff", "#1fa83a"]),
+)
+
+
+def favourite_look(name):
+    import re
+    for pattern, icon, colors in FAVOURITE_LOOKS:
+        if re.search(pattern, name, re.I):
+            return icon, colors
+    h = sum(ord(c) * 31 ** i for i, c in enumerate(name)) % 360
+    return "mdi:star-four-points-outline", [f"hsl({h} 90% 62%)", f"hsl({(h + 50) % 360} 85% 40%)"]
+
+
+FAVOURITE_STYLE = """
+ha-card { overflow: hidden; isolation: isolate; }
+ha-card::before { content: ""; position: absolute; inset: 0; z-index: -1; background: @GRAD@; opacity: .16;
+  transition: opacity .45s EASE; pointer-events: none; }
+ha-tile-icon { --tile-icon-color: @C0@; }
+@media (hover: hover) { ha-card:hover::before { opacity: .3; } }
+""".replace("EASE", EASE)
+FAVOURITE_ON_STYLE = """
+ha-card::before { opacity: .62; }
+ha-card { border-color: color-mix(in srgb, @C0@ 70%, transparent) !important;
+  box-shadow: 0 0 30px -8px @C0@, 0 10px 30px -12px rgba(0, 0, 0, .35) !important; }
+ha-tile-icon { scale: 1.12; }
+"""
+
+
+def strip_section(s):
+    light = s["entity"]
+    obj = light.split(".", 1)[1]
+    sel = s.get("preset", f"select.{obj}_preset")
+    name = s.get("name") or friendly(light)
+    badges = [badge(sel, "amber", icon="mdi:star-four-points-outline", name=None)] if usable(sel) else []
+    cards = [heading(name, s.get("icon", "mdi:led-strip-variant"), badges=badges),
+             tile(light, 12, name=name, icon=s.get("icon", "mdi:led-strip-variant"), color="amber",
+                  state_content=["state", "brightness", "effect"],
+                  features=[{"type": "light-brightness"}] if has_brightness(light) else None)]
+    options = STATES.get(sel, {}).get("attributes", {}).get("options") or []
+    favs = ents(s.get("favourites")) if s.get("favourites") else [{"entity": o} for o in options]
+    for f in favs:
+        option = f.get("option") or f.get("entity") or f.get("name")
+        if options and option not in options:
+            continue
+        icon, colors = favourite_look(option)
+        colors = f.get("colors") or colors
+        grad = f"linear-gradient(135deg, {', '.join(colors)})"
+        style = (GLASS + FAVOURITE_STYLE + f"{{% if is_state('{light}', 'on') and is_state('{sel}', {json.dumps(option)}) %}}"
+                 + FAVOURITE_ON_STYLE + "{% endif %}").replace("@GRAD@", grad).replace("@C0@", colors[min(1, len(colors) - 1)])
+        cards.append({**tile(sel, 4, vertical=True, name=f.get("name", option), icon=f.get("icon", icon), hide_state=True,
+                             tap={"action": "perform-action", "perform_action": "select.select_option",
+                                  "target": {"entity_id": sel}, "data": {"option": option}}),
+                      "_style": "plain", "card_mod": {"style": style}})
+    cards += [tile_from(t, 6, color="deep-purple") for t in ents(s.get("toggles")) if usable(t["entity"])]
+    if s.get("length") and usable(s["length"]):
+        cards.append(tile(s["length"], 12, name="Length", icon="mdi:ruler", color="amber",
+                          features=[{"type": "numeric-input", "style": "slider"}]))
+    return section(cards)
+
+
+
 def floor_view(f, areas_by_floor):
     rooms = [a for a in areas_by_floor[f["id"]] if a in ROOMS]
     floor_lights = [l for a in rooms for l in room_lights(ROOMS[a])]
@@ -2157,6 +2238,8 @@ def room_view(area_id, r, floor):
                             features=[{"type": "light-brightness"}] if has_brightness(l["entity"]) else None)
                   for l in lights]
         sections.append(section(cards))
+    # LED strips: the favourites, one tap away
+    sections += [strip_section(st) for st in ents(r.get("strips")) if usable(st["entity"])]
 
     # Media
     media = split(r.get("media"))
@@ -2387,7 +2470,7 @@ def main():
     if unknown:
         print("WARNING: rooms with no matching HA area:", unknown)
     missing = sorted({e for r in ROOMS.values()
-                      for k in ("lights", "media", "motion", "batteries", "automations", "power", "contacts")
+                      for k in ("lights", "strips", "media", "motion", "batteries", "automations", "power", "contacts")
                       for e in ids(r.get(k)) if e not in STATES}
                      | {e for k in ("last_bird", "photo", "species_today", "detections_today", "top_bird", "top_species", "recent")
                         for e in [CFG.get("birdnet", {}).get(k)] if e and e not in STATES})
