@@ -25,5 +25,5 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r dashboard/requirements.txt
-      - run: python -m py_compile dashboard/build_dashboard.py
+      - run: python -m py_compile dashboard/build_dashboard.py dashboard/halloween.py
       - run: python -c "import yaml; yaml.safe_load(open('dashboard/house.example.yaml')); yaml.safe_load(open('themes/lumen.yaml'))"

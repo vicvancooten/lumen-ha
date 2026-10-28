@@ -139,14 +139,25 @@ birdnet:                     # optional: BirdNET-Go on the home page + a Birds p
 #   (JSON: {"views": [<whole view, no header section>], "sections": [{"view": "garden", "index": 1, "section": {...}}]}
 #    `index` counts from the first section under the header. A view with an existing path replaces it.)
 
-# haunted:                   # optional: now and then, hair creeps out of a corner of a room photo
-#   every: 100               # average seconds between appearances, per room (randomised 50-150%)
-#   duration: 1              # seconds it stays visible
-#   api_key_file: ~/.config/lumen/openai-key   # or set OPENAI_API_KEY
-#   model: gpt-image-2       # any OpenAI-compatible image model; api_url: to use another endpoint
-#   quality: high            # low / medium / high: cheaper vs. more convincing
-#   rooms: [bedroom, bathroom]                 # default: every room
-#   prompt: "..."            # replaces the built-in prompt; {name} is the room name
+# halloween:                # optional: scenes, shows, a page and easter eggs, only around Halloween.
+#                            # The generator also writes halloween.yaml, a package for /config/packages/.
+#   season: {from: "10-17", until: "11-02"}  # month-day: when it all shows
+#   room: living_room        # where the shows play out; it gets every look
+#   speaker: media_player.living_room_speaker   # a Music Assistant player, for the shows
+#   tts: tts.google_ai_tts   # optional: spoken lines (the doorbell prank)
+#   exclude: [light.tv_ambilight]              # lights to leave alone
+#   pause_automations: [automation.strip_follows_the_music]   # paused while a show runs
+#   sounds: {folder: halloween, thunder: thunder.wav, boo: scream.wav, creak: creak.wav}
+#   #   thunder.wav is synthesised and uploaded for you; other names are files you put in that media folder
+#   rooms:                   # optional, per room
+#     bedroom: {looks: [ghost_light, seance]}  # pumpkin, witches_brew, blood_moon, ghost_light, seance, eyes
+#   pranks:                  # only while the Pranks switch is on, after dark
+#     doorbell: {sensor: binary_sensor.doorbell_visitor, room: hallway, voice: algenib, say: "Trick or treat!"}
+#     doors:
+#       - {name: Attic hatch, sensor: binary_sensor.attic_hatch, light: light.landing, sound: creak}
+#     flicker:
+#       - {name: Toilet, sensor: binary_sensor.toilet_motion, light: light.toilet, one_in: 3}
+#     witching_hour: true
 
 floors:                      # `id` is the HA floor ID
   - {id: ground_floor, path: ground-floor, name: Ground floor, short: Ground, icon: mdi:home-floor-g, tagline: "Living, cooking & outdoors"}

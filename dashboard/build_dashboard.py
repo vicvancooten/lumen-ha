@@ -5,18 +5,16 @@ Builds a floor -> room Lovelace dashboard from a small YAML description of your 
 
     python3 build_dashboard.py house.yaml            # generate and push
     python3 build_dashboard.py house.yaml --dry-run  # only write <url_path>.json locally
-    python3 build_dashboard.py house.yaml --rehaunt  # regenerate the haunted room photos
 
 The access token is read from $HA_TOKEN, or from the file named in
 home_assistant.token_file.
+
+With a `halloween:` section it also writes halloween.yaml, a Home Assistant package (see halloween.py).
 """
-import base64
-import hashlib
 import json
 import os
 import re
 import sys
-import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -25,6 +23,8 @@ import uuid
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "pylib"))
 import websocket  # noqa: E402
 import yaml  # noqa: E402
+
+import halloween  # noqa: E402
 
 CFG = {}
 HA = {}
@@ -247,8 +247,8 @@ def room_card(area_id, room, cols=12, rows=None, navigate=True, banner=False, as
         c["styles"]["title"] = {"display": "none"}  # the header already shows the room name
         # taller photo on phones, where 7:2 is just a strip
         style.append("@media (max-width: 767px) { ha-card { --user-grid-aspect-ratio: 4/3 !important; aspect-ratio: 4/3 !important; } }")
-    if room.get("haunt") and not hero:
-        style.append(HAUNT_STYLE % (json.dumps(room["haunt"]), area_id))
+    if not banner and halloween.enabled():
+        style.append(halloween.room_card_style())
     if style:
         c["card_mod"] = {"style": "\n".join(style)}
     c.update(grid(cols, rows))
@@ -564,14 +564,17 @@ def navbar():
         tabs.update({f"/{URL_PATH}/{r['path']}": i for r in ROOMS.values() if r["floor"] == f["id"]})
     for i, t in enumerate(extra, start=len(shown) + 1):
         tabs.update({f"/{URL_PATH}/{p}": i for p in [t["path"]] + t.get("also", [])})
-    if not any(birds_path() in [f"/{URL_PATH}/{p}" for p in [t["path"]] + t.get("also", [])] for t in extra):
-        tabs[birds_path()] = 0
-        home_pages.append(birds_path())
-    haunted = [a for a, r in ROOMS.items() if r.get("haunt")]
-    haunt_js = HAUNT_JS % (json.dumps(haunted), float(CFG["haunted"].get("every", 100)),
-                           float(CFG["haunted"].get("duration", 1))) if haunted else ""
+    # Pages reached from the home page (the birds, the outside cameras) light up Home, unless they have a tab.
+    in_tabs = {f"/{URL_PATH}/{p}" for t in extra for p in [t["path"]] + t.get("also", [])}
+    if CFG.get("birdnet"):
+        for p in (birds_path(), CFG["birdnet"].get("camera_page")):
+            if p and p not in in_tabs:
+                tabs[p] = 0
+                home_pages.append(p)
+    if halloween.enabled():
+        tabs[halloween.path()] = len(shown) + len(extra) + 1
     heroes = [f"/{URL_PATH}/{r['path']}" for r in ROOMS.values() if r.get("picture")]
-    home_selected = ("[[[ " + NAV_MOTION_JS % json.dumps(tabs) + ENTER_JS % (json.dumps(SPACING), json.dumps(heroes)) + haunt_js +
+    home_selected = ("[[[ " + NAV_MOTION_JS % json.dumps(tabs) + ENTER_JS % (json.dumps(SPACING), json.dumps(heroes)) + halloween.easter_js() +
                      (INGRESS_JS if CFG.get("birdnet", {}).get("saezuri_app") else "") +
                      f"return {json.dumps(home_pages)}.includes(window.location.pathname); ]]]")
     routes = [{"url": f"/{URL_PATH}/home", "icon": "mdi:home-outline", "icon_selected": "mdi:home",
@@ -586,6 +589,8 @@ def navbar():
         routes.append({"url": f"/{URL_PATH}/{t['path']}", "icon": t.get("icon", "mdi:compass-outline"),
                        "label": t.get("label", t["path"].title()),
                        "selected": selected([f"/{URL_PATH}/{p}" for p in [t["path"]] + t.get("also", [])])})
+    if halloween.enabled():
+        routes.append(halloween.nav_route())
     more_floors = [{"icon": f["icon"], "label": f["name"], "url": f"/{URL_PATH}/{f['path']}"} for f in hidden]
     routes.append({
         "icon": "mdi:dots-horizontal", "label": "More", "tap_action": {"action": "open-popup"},
@@ -664,52 +669,6 @@ def apply_style(node):
                 apply_style(v)
 
 
-# --------------------------------------------------------------------------------------
-# Haunted rooms: now and then, hair creeps out of a corner of a room photo
-# --------------------------------------------------------------------------------------
-HAUNT_PROMPT = (
-    "Edit this photo of a room. Long, wet, jet-black human hair pours out of one of the upper corners, "
-    "where the walls meet the ceiling, and hangs down in thick tangled strands, like the ghost in the "
-    "film The Grudge. Keep everything else exactly as it is: same camera angle, framing, furniture and "
-    "lighting. Photorealistic. Don't add people or text.")
-HAUNT_PROMPT_NO_PHOTO = (
-    "Photo of a dim, empty {name}, looking up into the corner where the walls meet the ceiling. Long, "
-    "wet, jet-black human hair pours out of the corner and hangs down in thick tangled strands, like "
-    "the ghost in the film The Grudge. Photorealistic, wide angle. Don't add people or text.")
-HAUNT_CACHE = "haunted-cache.json"
-
-# Sits between the room photo and the card content. Hidden until HAUNT_JS sets
-# --lumen-haunt-<area>. It rebuilds the photo layer exactly (the card's darkening gradient
-# and brightness filter, then the photo base showing through at 1 - background.opacity)
-# and is fully opaque, so the only thing that changes when it shows is the hair.
-HAUNT_STYLE = """
-room-background-image::after {
-  content: ""; position: absolute; inset: 0; pointer-events: none;
-  background:
-    linear-gradient(color-mix(in srgb, var(--lumen-photo-base) calc((1 - var(--user-opacity, .7)) * 100%%), transparent) 0 0),
-    var(--user-background-image-overlay, var(--default-overlay)),
-    center / cover no-repeat url(%s);
-  filter: var(--background-filter, none);
-  opacity: var(--lumen-haunt-%s, 0);
-  transition: opacity .12s;
-}
-"""
-
-# Custom properties inherit through shadow roots, so one flag on <html> reaches every card
-# of that room. Each room waits a random 50-150% of `every` seconds between appearances.
-HAUNT_JS = """
-if (!window.__lumenHaunt) {
-  window.__lumenHaunt = true;
-  const rooms = %s, every = %s, show = %s, root = document.documentElement.style;
-  const haunt = (room) => setTimeout(() => {
-    root.setProperty('--lumen-haunt-' + room, '1');
-    setTimeout(() => { root.removeProperty('--lumen-haunt-' + room); haunt(room); }, show * 1000);
-  }, every * (0.5 + Math.random()) * 1000);
-  rooms.forEach(haunt);
-}
-"""
-
-
 def http(url, data=None, headers=None):
     if not url.startswith("http"):
         url = HA["url"] + url
@@ -726,92 +685,6 @@ def multipart(fields, files):
         body += (f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"; filename="{filename}"\r\n'
                  f"Content-Type: {ctype}\r\n\r\n").encode() + blob + b"\r\n"
     return body + f"--{boundary}--\r\n".encode(), f"multipart/form-data; boundary={boundary}"
-
-
-def haunted_photo(room, picture, hc):
-    """Ask the image API for a haunted take on the room photo, or on an imagined room without one."""
-    key = os.environ.get("OPENAI_API_KEY")
-    if not key:
-        if not hc.get("api_key_file"):
-            sys.exit("haunted: set OPENAI_API_KEY or haunted.api_key_file")
-        with open(os.path.expanduser(hc["api_key_file"])) as fh:
-            key = fh.read().strip()
-    api = hc.get("api_url", "https://api.openai.com/v1").rstrip("/")
-    # gpt-image-2 keeps the photo's framing and aspect ratio, so the overlay lines up exactly.
-    model = hc.get("model", "gpt-image-2")
-    quality = hc.get("quality", "high")
-    if picture:
-        # HA area pictures are served as thumbnails; the model gets more detail from the original.
-        picture = re.sub(r"^(/api/image/serve/[^/]+)/\d+x\d+$", r"\1/original", picture)
-        # Only send the HA token to HA itself, not to an external picture URL.
-        auth = {} if picture.startswith("http") else {"Authorization": f"Bearer {HA['token']}"}
-        photo, ctype = http(picture, headers=auth)
-        prompt = hc.get("prompt", HAUNT_PROMPT).replace("{name}", room["name"])
-        body, form = multipart({"model": model, "prompt": prompt, "quality": quality},
-                               {"image": ("room." + ctype.split("/")[-1], ctype, photo)})
-        reply, _ = http(f"{api}/images/edits", body, {"Authorization": f"Bearer {key}", "Content-Type": form})
-    else:
-        prompt = hc.get("prompt", HAUNT_PROMPT_NO_PHOTO).replace("{name}", room["name"].lower())
-        body = json.dumps({"model": model, "prompt": prompt, "quality": quality, "size": "1536x1024"}).encode()
-        reply, _ = http(f"{api}/images/generations", body,
-                        {"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
-    return base64.b64decode(json.loads(reply)["data"][0]["b64_json"])
-
-
-def haunt(call, areas, dry_run):
-    """Give each haunted room a generated photo, uploaded to HA's image store. Results are cached
-    in haunted-cache.json and only regenerated when the room photo or prompt changes (or --rehaunt)."""
-    hc = CFG.get("haunted")
-    if not hc:
-        return
-    pictures = {a["area_id"]: a.get("picture") for a in areas}
-    cache = {}
-    if os.path.exists(HAUNT_CACHE):
-        with open(HAUNT_CACHE) as fh:
-            cache = json.load(fh)
-    try:
-        stored = {i["id"] for i in call("image/list")}
-    except RuntimeError:
-        stored = None
-    for area_id in hc.get("rooms") or list(ROOMS):
-        room = ROOMS.get(area_id)
-        if not room:
-            print(f"WARNING: haunted room {area_id!r} is not in rooms")
-            continue
-        picture = pictures.get(area_id)
-        fingerprint = hashlib.sha256(json.dumps(
-            [picture, hc.get("prompt"), hc.get("model"), hc.get("quality"), room["name"]]).encode()).hexdigest()[:16]
-        hit = cache.get(area_id)
-        if (hit and hit["fingerprint"] == fingerprint and "--rehaunt" not in sys.argv
-                and (stored is None or hit["id"] in stored)):
-            room["haunt"] = hit["url"]
-            continue
-        if dry_run:
-            print(f"haunted: no image for {room['name']} yet; run without --dry-run to generate it")
-            continue
-        print(f"haunted: generating {room['name']}...")
-        try:
-            blob = haunted_photo(room, picture, hc)
-            body, form = multipart({}, {"file": (f"haunted-{area_id}.png", "image/png", blob)})
-            reply, _ = http("/api/image/upload", body,
-                            {"Authorization": f"Bearer {HA['token']}", "Content-Type": form})
-        except urllib.error.HTTPError as e:
-            print(f"WARNING: haunting {room['name']} failed: {e} {e.read().decode(errors='replace')[:300]}")
-            continue
-        except (OSError, KeyError, ValueError) as e:
-            print(f"WARNING: haunting {room['name']} failed: {e}")
-            continue
-        if hit and stored and hit["id"] in stored:
-            try:
-                call("image/delete", image_id=hit["id"])
-            except RuntimeError:
-                pass
-        image_id = json.loads(reply)["id"]
-        cache[area_id] = {"fingerprint": fingerprint, "id": image_id,
-                          "url": f"/api/image/serve/{image_id}/original"}
-        room["haunt"] = cache[area_id]["url"]
-        with open(HAUNT_CACHE, "w") as fh:
-            json.dump(cache, fh, indent=1)
 
 
 # --------------------------------------------------------------------------------------
@@ -851,9 +724,9 @@ def bento(n):
 
 def home_view(areas_by_floor):
     user = CFG.get("user_name")
-    greeting = ("{% set h = now().hour %}"
+    greeting = ("{% set h = now().hour %}" + halloween.greeting(
                 "{{ 'Good night' if h < 6 else 'Good morning' if h < 12 else "
-                "'Good afternoon' if h < 18 else 'Good evening' }}" + (f", {user}" if user else ""))
+                "'Good afternoon' if h < 18 else 'Good evening' }}") + (f", {user}" if user else ""))
     welcome = [{
         "type": "custom:mushroom-title-card",
         "title": greeting,
@@ -901,6 +774,8 @@ def home_view(areas_by_floor):
         welcome.append({"type": "weather-forecast", "entity": CFG["weather"], "forecast_type": "daily",
                         "show_current": True, "show_forecast": True, **grid(12)})
     sections = [section(welcome)]
+    if halloween.enabled():
+        sections.append(halloween.home_section())
 
     quick = []
     for q in ents(CFG.get("quick_settings")):
@@ -2136,10 +2011,13 @@ def strip_section(s):
         grad = f"linear-gradient(135deg, {', '.join(colors)})"
         style = (GLASS + FAVOURITE_STYLE + f"{{% if is_state('{light}', 'on') and is_state('{sel}', {json.dumps(option)}) %}}"
                  + FAVOURITE_ON_STYLE + "{% endif %}").replace("@GRAD@", grad).replace("@C0@", colors[min(1, len(colors) - 1)])
-        cards.append({**tile(sel, 4, vertical=True, name=f.get("name", option), icon=f.get("icon", icon), hide_state=True,
-                             tap={"action": "perform-action", "perform_action": "select.select_option",
-                                  "target": {"entity_id": sel}, "data": {"option": option}}),
-                      "_style": "plain", "card_mod": {"style": style}})
+        card = {**tile(sel, 4, vertical=True, name=f.get("name", option), icon=f.get("icon", icon), hide_state=True,
+                       tap={"action": "perform-action", "perform_action": "select.select_option",
+                            "target": {"entity_id": sel}, "data": {"option": option}}),
+                "_style": "plain", "card_mod": {"style": style}}
+        if halloween.favourite_visibility(option):
+            card["visibility"] = halloween.favourite_visibility(option)
+        cards.append(card)
     cards += [tile_from(t, 6, color="deep-purple") for t in ents(s.get("toggles")) if usable(t["entity"])]
     if s.get("length") and usable(s["length"]):
         cards.append(tile(s["length"], 12, name="Length", icon="mdi:ruler", color="amber",
@@ -2232,6 +2110,9 @@ def room_view(area_id, r, floor):
     # Scenes, then the lights one by one
     if r.get("scenes"):
         sections.append(scenes_section(r))
+    spooky = halloween.room_section(area_id)
+    if spooky:
+        sections.append(spooky)
     if lights:
         cards = [heading("Lighting", "mdi:lightbulb-group")]
         cards += [tile_from(l, 12, color="amber",
@@ -2442,7 +2323,7 @@ def main():
                                 if (ROOMS.get(a["area_id"], {}).get("floor") or a.get("floor_id")) == f["id"]]
                       for f in FLOORS}
     floor_by_id = {f["id"]: f for f in FLOORS}
-    haunt(call, areas, "--dry-run" in sys.argv)
+    halloween.setup(sys.modules[__name__])
 
     if CFG.get("birdnet"):
         resolve_saezuri(call, CFG["birdnet"])
@@ -2464,6 +2345,8 @@ def main():
         room = next((v for v in views if v["path"] == ROOMS.get(CFG["birdnet"].get("room"), {}).get("path")), None)
         if room:
             room["sections"].insert(1, bird_room_section(CFG["birdnet"]))
+    if halloween.enabled():
+        views.append(halloween.view())
     apply_overlay(views)
 
     unknown = sorted(set(ROOMS) - {a["area_id"] for a in areas})
@@ -2492,8 +2375,13 @@ def main():
     with open(out, "w") as fh:
         json.dump(config, fh, indent=1, ensure_ascii=False)
     print(f"{len(views)} views generated -> {out}")
+    if halloween.enabled():
+        halloween.write_package("halloween.yaml")
+        print("Halloween package -> halloween.yaml (copy it to /config/packages/ and reload)")
     if "--dry-run" in sys.argv:
         return
+    if halloween.enabled():
+        halloween.upload_sounds(call)
     if not any(d["url_path"] == URL_PATH for d in call("lovelace/dashboards/list")):
         call("lovelace/dashboards/create", url_path=URL_PATH, title=dash.get("title", "Home"),
              icon=dash.get("icon", "mdi:home-heart"), show_in_sidebar=True, require_admin=False, mode="storage")

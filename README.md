@@ -162,33 +162,34 @@ page) and sections inserted into generated views. See `house.example.yaml` for t
 - **Get the normal HA interface back:** use **More → Show sidebar**, or add `?disable_km` to any dashboard URL.
   To keep HA's own header and sidebar permanently, set `dashboard.kiosk: false`.
 
-### Haunted rooms (optional)
+### Halloween (optional)
 
-Add a `haunted:` section to `house.yaml` (see the commented example) and every so often, for about a
-second, long black hair creeps out of a corner of a room photo, Grudge-style. Blink and it's gone.
+Add a `halloween:` section to `house.yaml` (see `house.example.yaml`) and, from mid-October to just after
+Halloween, the dashboard gets a **Halloween** tab and page, a Halloween row on each room page that suits it, a
+countdown on the home page and a few easter eggs. Outside that window all of it hides itself.
 
-<p align="center">
-  <img src="docs/haunted/demo.webp" alt="A toilet photo that briefly shows hair hanging from the corner" width="60%">
-</p>
+- **Scenes:** every room with colour or white-spectrum lights gets spooky looks (Pumpkin patch, Blood moon,
+  Ghost light, Witch's brew, Séance, Watching eyes, depending on what its lights can do; the room in `room:` gets
+  them all), and the whole house gets **Haunted house**. WLED strips join in with matching effects.
+- **Back to normal:** the first Halloween scene in a room remembers how its lights were, and **Normal** (per
+  room) or **Back to normal** (everything) puts them back. Lights that end up off forget their Halloween colour,
+  so they don't come back on blood red, and the first time they're switched on again they get a proper
+  brightness. At night (Night mode, and 05:00) and when the season ends, the house tidies up on its own.
+- **Shows:** a song through Music Assistant (Spooky Scary Skeletons, This Is Halloween, Danse Macabre, Thriller,
+  John Carpenter's Halloween theme) with a light show to match in the `room:`, or a thunderstorm whose flashes
+  line up with the thunder. Tap to start, tap again to stop; the lights go back as they were afterwards.
+- **Pranks** (a switch on the page, off by default): the doorbell says trick or treat and the hall flickers, a
+  door creaks with a light flickering, a light flickers now and then when you walk in, and whatever is still on
+  at three in the night after Halloween flickers.
+- **Easter eggs:** find them.
 
-<details>
-<summary>More haunted rooms</summary>
+The generator writes `halloween.yaml` next to the dashboard JSON: a Home Assistant
+[package](https://www.home-assistant.io/docs/configuration/packages/) with the season sensor, scenes, scripts and
+automations. Copy it to `/config/packages/halloween.yaml` and reload all YAML. It uploads the thunderstorm
+(synthesised, so nothing to license) to the `sounds.folder` in HA's local media.
 
-| Room photo | Haunted |
-| --- | --- |
-| ![Living room](docs/haunted/living-room.webp) | ![Living room, haunted](docs/haunted/living-room-haunted.webp) |
-| ![Bathroom](docs/haunted/bathroom.webp) | ![Bathroom, haunted](docs/haunted/bathroom-haunted.webp) |
-| ![Attic](docs/haunted/attic.webp) | ![Attic, haunted](docs/haunted/attic-haunted.webp) |
-| ![Hallway](docs/haunted/hallway.webp) | ![Hallway, haunted](docs/haunted/hallway-haunted.webp) |
-
-</details>
-
-The generator sends each room's area picture to an image model (OpenAI `gpt-image-2` by default, so you
-need an API key) with a prompt to add the hair, and uploads the result to Home Assistant's image store.
-Rooms without a picture get an imagined one. Images are cached in `haunted-cache.json` and only
-regenerated when the room photo, prompt or model changes; `--rehaunt` forces new ones. `--dry-run` never
-generates images, it only uses what's already cached. Each room shows up on its own random timer,
-averaging once every `every` seconds.
+**Cleaning up:** delete `/config/packages/halloween.yaml` and reload, delete the sounds folder under Media, and
+remove `halloween:` from `house.yaml` and regenerate. Until you do, it just sleeps until next October.
 
 ## Troubleshooting
 

@@ -5,3 +5,4 @@ dashboard/*.json
 !hacs.json
 dashboard/pylib
 __pycache__/
+dashboard/halloween.yaml
