@@ -196,8 +196,8 @@ Lumen:
       lumen-hero-veil: "8%"
 
   # ---------- card-mod: frosted glass and micro-interactions on every card ----------
-  # Cards rise in when a view opens (staggered when a card sets --lumen-i), lift a little on
-  # hover, and their icon nudges up. The Lumen dashboard runs its own page-wide entrance and
+  # Cards rise in when a view opens (staggered when a card sets --lumen-i); on hover only what a tap
+  # acts on lifts (the card sets --lumen-lift), see below. The Lumen dashboard runs its own page-wide entrance and
   # turns this one off with --lumen-rise: none.
   # Everything uses `translate`/`scale` (not `transform`) so it never fights card styles,
   # and all of it switches off for prefers-reduced-motion.
@@ -221,13 +221,14 @@ Lumen:
     ha-tile-icon, mushroom-shape-icon, .icon-container {
       transition: scale .35s var(--lumen-spring);
     }
+    /* A hover says what a tap does, and that's the card's to say (lumen-house ha/card_semantics.py): a card that does
+       something sets --lumen-lift (it rises, its icon nudges up: --lumen-icon-hover), one that opens detail brightens
+       and slides a chevron out; plain information stays still. Without either, nothing moves. */
     @media (hover: hover) {
       :host(:not(.type-heading):not(.type-custom-mushroom-title-card):not(.type-custom-mushroom-chips-card)) ha-card:not(.navbar-card):hover {
-        translate: 0 -2px;
-        border-color: var(--lumen-card-border-hover, color-mix(in srgb, var(--primary-text-color) 16%, transparent));
-        box-shadow: var(--lumen-card-shadow-hover, 0 22px 44px -18px rgba(0, 0, 0, .5));
+        translate: 0 var(--lumen-lift, 0px);
       }
-      ha-card:hover ha-tile-icon, ha-card:hover mushroom-shape-icon { scale: 1.08; }
+      ha-card:hover ha-tile-icon, ha-card:hover mushroom-shape-icon { scale: var(--lumen-icon-hover, 1); }
     }
     @keyframes lumen-rise {
       from { opacity: 0; translate: 0 10px; }
