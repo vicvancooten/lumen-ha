@@ -222,11 +222,11 @@ Lumen:
       transition: scale .35s var(--lumen-spring);
     }
     /* A hover says what a tap does, and that's the card's to say (lumen-house ha/card_semantics.py): a card that does
-       something sets --lumen-lift (it rises, its icon nudges up: --lumen-icon-hover), one that opens detail brightens
+       something sets --lumen-lift (e.g. 0 -2px: it rises, its icon nudges up: --lumen-icon-hover), one that opens detail brightens
        and slides a chevron out; plain information stays still. Without either, nothing moves. */
     @media (hover: hover) {
       :host(:not(.type-heading):not(.type-custom-mushroom-title-card):not(.type-custom-mushroom-chips-card)) ha-card:not(.navbar-card):hover {
-        translate: 0 var(--lumen-lift, 0px);
+        translate: var(--lumen-lift, none); /* none, not 0: any translate pins a card's position: fixed backdrop (the Birds hero) to the card */
       }
       ha-card:hover ha-tile-icon, ha-card:hover mushroom-shape-icon { scale: var(--lumen-icon-hover, 1); }
     }
