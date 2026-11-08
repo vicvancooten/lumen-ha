@@ -174,7 +174,7 @@ def plural_lights(entities):
 
 def room_card(area_id, room, cols=12, rows=None, navigate=True, banner=False, aspect=None):
     """room-summary-card: area photo background, lights up when any light is on,
-    green border on motion, up to four one-tap device toggles.
+    "Someone here" on motion, its readings as glass chips, up to four one-tap device toggles.
 
     With `banner`, a room with a photo gets a hero instead: the card turns see-through and
     the photo becomes the page background (see hero_background), with the room name large on top."""
@@ -214,7 +214,7 @@ def room_card(area_id, room, cols=12, rows=None, navigate=True, banner=False, as
         c["lights"] = room_lights(room)
         c["entity"] = {"entity_id": room_lights(room)[0], "tap_action": {"action": "toggle"}}
     if room.get("motion"):
-        c["occupancy"] = {"entities": ids(room["motion"])}
+        c["occupancy"] = {"entities": ids(room["motion"]), "options": ROOM_OCCUPANCY_OPTIONS}
     if navigate:
         c["actions"] = {"tap_action": nav(f"/{URL_PATH}/{room['path']}")}
     if banner:
@@ -249,8 +249,8 @@ def room_card(area_id, room, cols=12, rows=None, navigate=True, banner=False, as
         style.append("@media (max-width: 767px) { ha-card { --user-grid-aspect-ratio: 4/3 !important; aspect-ratio: 4/3 !important; } }")
     if not banner and halloween.enabled():
         style.append(halloween.room_card_style())
-    if style:
-        c["card_mod"] = {"style": "\n".join(style)}
+    style.append(ROOM_PRESENCE_STYLE + ("" if room.get("has_picture") else ROOM_PLAIN_STYLE))
+    c["card_mod"] = {"style": {".": "\n".join(style), "sensor-collection $": ROOM_CHIPS_STYLE}}
     c.update(grid(cols, rows))
     return c
 
@@ -312,9 +312,42 @@ HERO_STYLE = """
 ha-card { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
 ha-card:hover { translate: none !important; }
 room-background-image { display: none; }
-.sensors, .stats { color: rgba(255, 255, 255, .88) !important; text-shadow: 0 1px 10px rgba(0, 0, 0, .5); }
 @media (max-width: 767px) { ha-card { --user-grid-aspect-ratio: 5/4 !important; aspect-ratio: 5/4 !important; } }
 """
+
+# Room cards, in Lumen's idiom (lumen-house ha/room_cards.py does the same to the live dashboard): presence as a glass
+# chip with a green dot, "Someone here", under the readings (the card marks itself occupied), instead of the card's own
+# 3 px border and pulsing glow; the readings as glass chips, readable on any photo, at full strength (the card faded
+# them to 40% on a room it counts as idle). A card without a photo gets quiet chips in the theme's colours.
+ROOM_OCCUPANCY_OPTIONS = ["disabled_card_styles", "disable_icon_styles"]
+ROOM_PRESENCE_STYLE = """
+/* lumen:room */
+sensor-collection { opacity: 1 !important; } /* (the card dims them to .4 when it counts the room as idle) */
+:host([alarm='occupied']) .info::after {
+  content: 'Someone here'; display: flex; align-items: center; width: max-content; margin-top: 8px;
+  padding: 3px 11px 3px 23px; border-radius: 999px; font-size: 12.5px; font-weight: 600; line-height: 18px; letter-spacing: .1px;
+  color: var(--lumen-chip-ink, #fff);
+  background: radial-gradient(circle at 12.5px 50%, #4ade80 0 3.5px, rgba(74, 222, 128, .28) 4.5px 6.5px, transparent 7px), var(--lumen-chip-glass, rgba(12, 14, 20, .5));
+  backdrop-filter: blur(12px) saturate(140%); -webkit-backdrop-filter: blur(12px) saturate(140%);
+  border: 1px solid var(--lumen-chip-edge, rgba(255, 255, 255, .14));
+  animation: lumen-here .5s cubic-bezier(.2, .8, .2, 1) both; }
+@keyframes lumen-here { from { opacity: 0; translate: 0 4px; } }
+@media (prefers-reduced-motion: reduce) { :host([alarm='occupied']) .info::after { animation: none; } }
+/* /lumen:room */"""
+ROOM_CHIPS_STYLE = """
+/* lumen:room */
+:host { gap: 6px !important; flex-wrap: wrap; margin-top: 6px; }
+.sensor { gap: 5px !important; padding: 3px 11px 3px 8px; border-radius: 999px; font-size: 13px; font-weight: 600; line-height: 18px;
+  color: var(--lumen-chip-ink, #fff) !important; background: var(--lumen-chip-glass, rgba(12, 14, 20, .5));
+  backdrop-filter: blur(12px) saturate(140%); -webkit-backdrop-filter: blur(12px) saturate(140%);
+  border: 1px solid var(--lumen-chip-edge, rgba(255, 255, 255, .14)); text-shadow: none; }
+.sensor ha-state-icon { --mdc-icon-size: 16px; color: inherit; opacity: .85; }
+/* /lumen:room */"""
+ROOM_PLAIN_STYLE = """
+/* lumen:room */
+ha-card { --lumen-chip-ink: var(--primary-text-color); --lumen-chip-glass: color-mix(in srgb, var(--primary-text-color) 6%, transparent);
+  --lumen-chip-edge: color-mix(in srgb, var(--primary-text-color) 8%, transparent); }
+/* /lumen:room */"""
 GLASS_TYPES = {"tile", "weather-forecast", "custom:mini-graph-card", "markdown", "custom:mushroom-template-card"}
 TITLE_STYLE = """
 ha-card { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
