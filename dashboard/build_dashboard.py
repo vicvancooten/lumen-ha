@@ -323,6 +323,7 @@ ROOM_OCCUPANCY_OPTIONS = ["disabled_card_styles", "disable_icon_styles"]
 ROOM_PRESENCE_STYLE = """
 /* lumen:room */
 sensor-collection { opacity: 1 !important; } /* (the card dims them to .4 when it counts the room as idle) */
+sensor-collection { margin-left: 0 !important; } /* (the card pulls the readings out to the left of the name; the chips line up with it) */
 :host([alarm='occupied']) .info::after {
   content: 'Someone here'; display: flex; align-items: center; width: max-content; margin-top: 8px;
   padding: 3px 11px 3px 23px; border-radius: 999px; font-size: 12.5px; font-weight: 600; line-height: 18px; letter-spacing: .1px;
