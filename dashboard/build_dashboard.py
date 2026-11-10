@@ -108,7 +108,11 @@ def tile(entity, cols=6, features=None, vertical=False, name=None, icon=None, co
         c["hide_state"] = True
     if features:
         c["features"] = features
-        c["features_position"] = "bottom"
+        # a lamp's brightness slider beside its name: one row a lamp, not a card with a full-width bar under it
+        inline = not vertical and all(f.get("type") == "light-brightness" for f in features)
+        c["features_position"] = "inline" if inline else "bottom"
+        if inline and rows is None:
+            rows = 1
     c.update(grid(cols, rows))
     return c
 
