@@ -113,7 +113,6 @@ def tile(entity, cols=6, features=None, vertical=False, name=None, icon=None, co
         # (a stack of full-width strips with the slider inline looked odd)
         if entity.startswith("light.") and all(f.get("type") == "light-brightness" for f in features):
             c["vertical"] = True
-            cols = min(cols, 6)
     c.update(grid(cols, rows))
     return c
 
@@ -2036,7 +2035,7 @@ def strip_section(s):
     name = s.get("name") or friendly(light)
     badges = [badge(sel, "amber", icon="mdi:star-four-points-outline", name=None)] if usable(sel) else []
     cards = [heading(name, s.get("icon", "mdi:led-strip-variant"), badges=badges),
-             tile(light, 6, vertical=True, name=name, icon=s.get("icon", "mdi:led-strip-variant"), color="amber",
+             tile(light, 12, vertical=True, name=name, icon=s.get("icon", "mdi:led-strip-variant"), color="amber",
                   state_content=["state", "brightness", "effect"],
                   features=[{"type": "light-brightness"}] if has_brightness(light) else None)]
     options = STATES.get(sel, {}).get("attributes", {}).get("options") or []
@@ -2157,6 +2156,8 @@ def room_view(area_id, r, floor):
         cards += [tile_from(l, 6, vertical=True, color="amber",
                             features=[{"type": "light-brightness"}] if has_brightness(l["entity"]) else None)
                   for l in lights]
+        if len(lights) % 2:  # an odd one out takes the whole row, no gap beside it
+            cards[-1]["grid_options"]["columns"] = 12
         sections.append(section(cards))
     # LED strips: the favourites, one tap away
     sections += [strip_section(st) for st in ents(r.get("strips")) if usable(st["entity"])]
