@@ -108,11 +108,12 @@ def tile(entity, cols=6, features=None, vertical=False, name=None, icon=None, co
         c["hide_state"] = True
     if features:
         c["features"] = features
-        # a lamp's brightness slider beside its name: one row a lamp, not a card with a full-width bar under it
-        inline = not vertical and all(f.get("type") == "light-brightness" for f in features)
-        c["features_position"] = "inline" if inline else "bottom"
-        if inline and rows is None:
-            rows = 1
+        c["features_position"] = "bottom"
+        # a lamp is a square: its icon and name on top, the brightness slider along the bottom, two to a row
+        # (a stack of full-width strips with the slider inline looked odd)
+        if entity.startswith("light.") and all(f.get("type") == "light-brightness" for f in features):
+            c["vertical"] = True
+            cols = min(cols, 6)
     c.update(grid(cols, rows))
     return c
 
@@ -2035,7 +2036,7 @@ def strip_section(s):
     name = s.get("name") or friendly(light)
     badges = [badge(sel, "amber", icon="mdi:star-four-points-outline", name=None)] if usable(sel) else []
     cards = [heading(name, s.get("icon", "mdi:led-strip-variant"), badges=badges),
-             tile(light, 12, name=name, icon=s.get("icon", "mdi:led-strip-variant"), color="amber",
+             tile(light, 6, vertical=True, name=name, icon=s.get("icon", "mdi:led-strip-variant"), color="amber",
                   state_content=["state", "brightness", "effect"],
                   features=[{"type": "light-brightness"}] if has_brightness(light) else None)]
     options = STATES.get(sel, {}).get("attributes", {}).get("options") or []
@@ -2153,7 +2154,7 @@ def room_view(area_id, r, floor):
         sections.append(spooky)
     if lights:
         cards = [heading("Lighting", "mdi:lightbulb-group")]
-        cards += [tile_from(l, 12, color="amber",
+        cards += [tile_from(l, 6, vertical=True, color="amber",
                             features=[{"type": "light-brightness"}] if has_brightness(l["entity"]) else None)
                   for l in lights]
         sections.append(section(cards))
